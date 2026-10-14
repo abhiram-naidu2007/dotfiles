@@ -164,4 +164,3 @@ exec_always --no-startup-id ~/.config/i3/scripts/autostart.sh
 exec --no-startup-id xss-lock --transfer-sleep-lock -- ~/dotfiles/lockscreen/lock.sh
 exec --no-startup-id /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1
 exec --no-startup-id nm-applet
-exec --no-startup-id autotiling

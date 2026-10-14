@@ -12,9 +12,13 @@ else
 fi
 
 # Colours for i3/polybar/rofi/dunst/ghostty/fish/starship
+before=$(md5sum "$HOME/.config/i3/colors.conf" 2>/dev/null)
 python3 -I "$HOME/dotfiles/theme/apply.py" "$WALLPAPER" >/dev/null
+after=$(md5sum "$HOME/.config/i3/colors.conf" 2>/dev/null)
 if pgrep -x i3 >/dev/null; then
-    pkill -USR1 -x polybar        # polybar reload
-    pkill -x dunst; dunst &       # dunst has no live reload
-    i3-msg reload >/dev/null
+    pkill -USR1 -x polybar            # polybar reload
+    dunstctl reload 2>/dev/null       # dunst reload
+    # reload i3 only if colours changed (autostart runs this script: avoid reload loop)
+    [ "$before" != "$after" ] && i3-msg reload >/dev/null
 fi
+exit 0
