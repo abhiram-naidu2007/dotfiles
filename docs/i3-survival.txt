@@ -1,0 +1,47 @@
+i3 SURVIVAL SHEET   (Super = the Windows key)       file: ~/dotfiles/docs/i3-survival.txt
+Full live list of every key:  Super + /
+
+LOST / STUCK?
+  Super+Esc ........ power menu (lock, logout, suspend, reboot, shutdown)
+  Ctrl+Alt+F3 ...... text console: log in, run  startxfce4  or reboot
+  Log out, choose "Xfce Session" at login = old desktop, untouched
+  Esc / Enter ...... leave resize mode (after Super+R)
+  Alt+F4 ........... close a window if Super+Q fails
+
+OPEN THINGS
+  Super+Enter ...... terminal (fish)        also Ctrl+Alt+T
+  Super+A / Space .. app launcher (type name, Enter)
+  Super+Tab ........ window switcher
+  Super+B .......... browser      Super+E .... file manager
+  Super+G .......... lock screen
+  Print ............ screenshot of screen     Super+Shift+S ... select an area (saved in ~/Pictures + clipboard)
+
+WINDOWS (they tile: never overlap, no title bar, no X button)
+  Super+Q .......... CLOSE focused window
+  Super+arrows or h j k l ........ move focus (h=left j=down k=up l=right)
+  Super+Shift+arrows / h j k l ... move the window
+  Super+F .......... fullscreen on/off
+  Super+Shift+Space  float on/off (floating window: hold Super + drag mouse to move it)
+  Super+R .......... resize mode: h j k l or arrows, then Esc
+  Super+W .......... tabbed layout    Super+S .... split layout
+  Super+V / Super+Shift+V .. choose where the NEXT window opens (below / beside)
+
+WORKSPACES (separate screens; you do not "create" them, just go to one)
+  Super+1 ... Super+0 .... go to workspace 1..10 (empty ones appear in the bar when you visit)
+  Super+Shift+1..0 ....... send the focused window to that workspace (you stay here)
+  Super+Ctrl+Right/Left .. next / previous workspace
+  Tip: browser on 2, terminal on 1, files on 3. Click a number in the bar to jump too.
+
+i3 ITSELF
+  Super+Shift+C ... reload config       Super+Shift+R ... restart i3 (keeps windows)
+  Super+Shift+E ... exit menu (asks before logout)
+  Check config before reload:  i3 -C -c ~/.config/i3/config
+
+MEDIA KEYS: volume, mute, brightness, play/next/prev work from the keyboard.
+
+WHERE THINGS LIVE (edit in ~/dotfiles, never in ~/.config; changes apply after Super+Shift+C)
+  i3/.config/i3/config .......... keys and behaviour
+  polybar/ rofi/ dunst/ picom/ ghostty/ fish/ gtk/
+  theme/apply.py ................ palette from wallpaper. Re-theme everything:  ~/dotfiles/wallpaper/wallpaper.sh
+  docs/fish.md .................. fish cheat sheet
+  Undo any mistake:  cd ~/dotfiles && git log --oneline && git checkout <commit> -- <file>
