@@ -1,6 +1,6 @@
 #!/bin/bash
 
-WALLPAPER="$HOME/dotfiles/lockscreen/assests/lock-wallpaper-edit.png"
+WALLPAPER="$HOME/dotfiles/lockscreen/assets/lock-wallpaper-edit.png"
 OUTPUT="/tmp/lockscreen.png"
 
 TIME=$(date '+%I:%M %p')

@@ -3,7 +3,7 @@
 # Run again to close it (toggle). Needs: btop tty-clock
 WS=3
 LAYOUT="$HOME/.config/i3/layouts/showcase.json"
-T="ghostty --background-opacity=0.78 --window-padding-x=16 --window-padding-y=12"
+T="ghostty --window-padding-x=16 --window-padding-y=12"
 
 if [ "$1" = stop ] || i3-msg -t get_tree | grep -q '"class":"dev.showcase.'; then
     i3-msg '[class="^dev\.showcase\..*"] kill' >/dev/null
