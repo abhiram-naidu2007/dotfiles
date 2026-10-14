@@ -1,0 +1,33 @@
+configuration {
+    modi: "drun,run,window";
+    show-icons: true;
+    icon-theme: "elementary-xfce-dark";
+    display-drun: " ";
+    display-window: " ";
+    drun-display-format: "{name}";
+    font: "JetBrainsMono Nerd Font 11";
+}
+@import "colors.rasi"
+* { background-color: transparent; text-color: @fg; }
+window {
+    width: 34em;
+    border: 2px;
+    border-color: @accent;
+    border-radius: 12px;
+    background-color: @bg;
+}
+mainbox { padding: 12px; spacing: 10px; }
+inputbar {
+    padding: 8px 12px;
+    spacing: 8px;
+    border-radius: 8px;
+    background-color: @surface;
+    children: [ prompt, entry ];
+}
+prompt { text-color: @accent; }
+entry { placeholder: "search"; placeholder-color: @dim; }
+listview { lines: 8; columns: 1; scrollbar: false; spacing: 4px; fixed-height: true; }
+element { padding: 8px 10px; spacing: 10px; border-radius: 8px; }
+element selected.normal { background-color: @accent; text-color: @bg; }
+element-text { vertical-align: 0.5; }
+element-icon { size: 1.4em; }
