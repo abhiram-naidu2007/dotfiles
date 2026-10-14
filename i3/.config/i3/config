@@ -22,7 +22,7 @@ bindsym Control+Mod1+t exec ghostty                   ## terminal (Ctrl+Alt+T)
 bindsym $mod+a exec rofi -show drun                   ## app launcher
 bindsym $mod+space exec rofi -show drun               ## app launcher
 bindsym $mod+Tab exec rofi -show window               ## window switcher
-bindsym $mod+b exec exo-open --launch WebBrowser      ## browser
+bindsym $mod+b exec thorium-browser --new-window            ## browser (Thorium)
 bindsym $mod+e exec exo-open --launch FileManager     ## file manager
 bindsym $mod+Escape exec ~/.config/i3/scripts/powermenu.sh  ## power menu
 bindsym $mod+g exec ~/dotfiles/lockscreen/lock.sh     ## lock screen
@@ -117,6 +117,9 @@ bindsym XF86MonBrightnessDown exec --no-startup-id brightnessctl set 5%-
 bindsym XF86AudioPlay exec --no-startup-id playerctl play-pause
 bindsym XF86AudioNext exec --no-startup-id playerctl next
 bindsym XF86AudioPrev exec --no-startup-id playerctl previous
+
+# --- new browser windows open on the workspace you are on ---
+for_window [class="Thorium-browser"] move workspace current
 
 # --- floating rules (dialogs, pickers) ---
 for_window [window_role="pop-up"] floating enable
