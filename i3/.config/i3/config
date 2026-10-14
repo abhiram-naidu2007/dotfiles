@@ -45,6 +45,9 @@ bindsym Print exec ~/.config/i3/scripts/screenshot.sh full
 bindsym $mod+Shift+s exec ~/.config/i3/scripts/screenshot.sh area
 
 # --- windows ---
+## workspace 3 showcase (Super+Shift+W = open / again to close)
+bindsym $mod+Shift+w exec ~/.config/i3/scripts/showcase.sh
+
 ## close window
 bindsym $mod+q kill
 ## fullscreen
