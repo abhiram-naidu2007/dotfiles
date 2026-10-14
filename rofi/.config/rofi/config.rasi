@@ -28,6 +28,7 @@ prompt { text-color: @accent; }
 entry { placeholder: "search"; placeholder-color: @dim; }
 listview { lines: 8; columns: 1; scrollbar: false; spacing: 4px; fixed-height: true; }
 element { padding: 8px 10px; spacing: 10px; border-radius: 8px; }
+element normal.normal, element alternate.normal, element normal.active, element alternate.active { background-color: transparent; text-color: @fg; }
 element selected.normal { background-color: @accent; text-color: @bg; }
 element-text { vertical-align: 0.5; }
 element-icon { size: 1.4em; }

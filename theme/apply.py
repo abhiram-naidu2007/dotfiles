@@ -75,7 +75,7 @@ def render(p):
         target = Path(os.path.expanduser(lines[0].split("target:", 1)[1].strip()))
         body = "\n".join(lines[1:]) + "\n"
         for k, v in p.items():
-            body = body.replace("{" + k + "}", v)
+            body = body.replace("{" + k + "}", str(v))
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(body)
         print("wrote", target)

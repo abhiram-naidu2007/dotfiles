@@ -1,4 +1,4 @@
-# Learn fish: ~/dotfiles/fish/LEARN.md
+# Learn fish: ~/dotfiles/docs/fish.md
 set -g fish_greeting
 fish_add_path ~/.local/bin
 
