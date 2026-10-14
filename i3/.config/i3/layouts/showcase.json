@@ -3,18 +3,18 @@
   "percent": 1.0,
   "nodes": [
     {
-      "layout": "splitv", "percent": 0.58,
+      "layout": "splitv", "percent": 0.60,
       "nodes": [
-        { "percent": 0.52, "swallows": [{ "class": "^Thorium-browser$" }] },
-        { "percent": 0.48, "swallows": [{ "class": "^showcase-fetch$" }] }
+        { "percent": 0.62, "swallows": [{ "class": "^Thorium-browser$" }] },
+        { "percent": 0.38, "swallows": [{ "class": "^showcase-fetch$" }] }
       ]
     },
     {
-      "layout": "splitv", "percent": 0.42,
+      "layout": "splitv", "percent": 0.40,
       "nodes": [
-        { "percent": 0.25, "swallows": [{ "class": "^showcase-clock$" }] },
-        { "percent": 0.33, "swallows": [{ "class": "^showcase-matrix$" }] },
-        { "percent": 0.42, "swallows": [{ "class": "^showcase-cava$" }] }
+        { "percent": 0.22, "swallows": [{ "class": "^showcase-clock$" }] },
+        { "percent": 0.24, "swallows": [{ "class": "^showcase-cal$" }] },
+        { "percent": 0.54, "swallows": [{ "class": "^showcase-btop$" }] }
       ]
     }
   ]
