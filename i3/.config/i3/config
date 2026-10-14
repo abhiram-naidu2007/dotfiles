@@ -17,6 +17,8 @@ focus_follows_mouse no
 
 # --- apps ---
 bindsym $mod+Return exec ghostty                      ## terminal
+bindsym $mod+KP_Enter exec ghostty
+bindsym Control+Mod1+t exec ghostty                   ## terminal (Ctrl+Alt+T)
 bindsym $mod+a exec rofi -show drun                   ## app launcher
 bindsym $mod+space exec rofi -show drun               ## app launcher
 bindsym $mod+Tab exec rofi -show window               ## window switcher
