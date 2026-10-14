@@ -12,7 +12,8 @@ OPEN THINGS
   Super+Enter ...... terminal (fish)        also Ctrl+Alt+T
   Super+A / Space .. app launcher (type name, Enter)
   Super+Tab ........ window switcher
-  Super+B .......... browser      Super+E .... file manager
+  Super+B .......... Thorium (last profile)   Super+Shift+B ... choose Thorium profile (3 accounts)
+  Super+E .......... file manager
   Super+G .......... lock screen
   Print ............ screenshot of screen     Super+Shift+S ... select an area (saved in ~/Pictures + clipboard)
 
@@ -25,6 +26,22 @@ WINDOWS (they tile: never overlap, no title bar, no X button)
   Super+R .......... resize mode: h j k l or arrows, then Esc
   Super+W .......... tabbed layout    Super+S .... split layout
   Super+V / Super+Shift+V .. choose where the NEXT window opens (below / beside)
+
+SAME WORKSPACE, SEVERAL WINDOWS (e.g. Thorium + Firefox side by side)
+  Super+Left/Right ... jump focus to the window on that side (Up/Down for stacked ones)
+  Super+Tab .......... pick any window by name from a list (works across workspaces)
+  Super+W ............ tabbed layout: all windows as tabs in one frame; then Super+Left/Right switches tab
+  Super+S ............ back to split layout
+  Super+Shift+Left/Right .. swap the focused window with its neighbour
+  Super+Q ............ close ONLY the focused window (the one with the coloured border)
+  Closing the last window of a workspace just leaves it empty.
+
+MISTAKES / UNDO
+  Wrong layout .......... Super+S (split) or Super+W (tabbed); Super+Shift+Space toggles float
+  Window on wrong workspace ... Super+Shift+<number> sends it to the right one
+  Closed something by mistake ... reopen the app; Thorium: Ctrl+Shift+T restores a tab/window
+  Bad config edit ....... i3 keeps running the OLD config if the new one has errors; check with
+                          i3 -C -c ~/.config/i3/config   then  cd ~/dotfiles && git checkout -- <file>
 
 WORKSPACES (separate screens; you do not "create" them, just go to one)
   Super+1 ... Super+0 .... go to workspace 1..10 (empty ones appear in the bar when you visit)

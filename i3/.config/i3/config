@@ -23,6 +23,7 @@ bindsym $mod+a exec rofi -show drun                   ## app launcher
 bindsym $mod+space exec rofi -show drun               ## app launcher
 bindsym $mod+Tab exec rofi -show window               ## window switcher
 bindsym $mod+b exec thorium-browser --new-window            ## browser (Thorium)
+bindsym $mod+Shift+b exec ~/.config/i3/scripts/browser.sh  ## browser: choose profile (3 accounts)
 bindsym $mod+e exec exo-open --launch FileManager     ## file manager
 bindsym $mod+Escape exec ~/.config/i3/scripts/powermenu.sh  ## power menu
 bindsym $mod+g exec ~/dotfiles/lockscreen/lock.sh     ## lock screen
