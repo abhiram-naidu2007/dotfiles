@@ -160,9 +160,6 @@ bindsym $mod+F12 exec --no-startup-id ~/.config/i3/scripts/osd.sh vol up
 bindsym $mod+F5 exec --no-startup-id ~/.config/i3/scripts/osd.sh bri down
 bindsym $mod+F6 exec --no-startup-id ~/.config/i3/scripts/osd.sh bri up
 
-# --- new browser windows open on the workspace you are on ---
-for_window [class="Thorium-browser"] move workspace current
-
 # --- floating rules (dialogs, pickers) ---
 for_window [window_role="pop-up"] floating enable
 for_window [window_role="task_dialog"] floating enable
