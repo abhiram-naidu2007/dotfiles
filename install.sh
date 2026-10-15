@@ -9,7 +9,7 @@
 set -euo pipefail
 DOT="$(cd "$(dirname "$0")" && pwd)"
 LOCK="$DOT/lockscreen/lock.sh"
-STOW_PKGS=(i3 polybar rofi dunst picom ghostty fish gtk)
+STOW_PKGS=(i3 polybar rofi dunst picom ghostty fish gtk thorium)
 APT_PKGS=(i3 polybar rofi dunst picom fish starship stow fonts-inter autotiling feh
           policykit-1-gnome brightnessctl playerctl maim xclip network-manager-gnome
           btop tty-clock ncal)
