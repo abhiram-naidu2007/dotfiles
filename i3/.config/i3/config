@@ -22,9 +22,9 @@ bindsym $mod+KP_Enter exec ghostty
 ## terminal (Ctrl+Alt+T)
 bindsym Control+Mod1+t exec ghostty
 ## app launcher
-bindsym $mod+a exec rofi -show drun
+bindsym $mod+a exec env XDG_CURRENT_DESKTOP=XFCE rofi -show drun
 ## app launcher
-bindsym $mod+space exec rofi -show drun
+bindsym $mod+space exec env XDG_CURRENT_DESKTOP=XFCE rofi -show drun
 ## window switcher
 bindsym $mod+Tab exec rofi -show window
 ## browser (Thorium)
@@ -33,6 +33,9 @@ bindsym $mod+b exec thorium-browser --new-window
 bindsym $mod+Shift+b exec ~/.config/i3/scripts/browser.sh
 ## file manager
 bindsym $mod+e exec exo-open --launch FileManager
+## quick settings menu
+bindsym $mod+i exec ~/.config/i3/scripts/settings.sh
+
 ## power menu
 bindsym $mod+Escape exec ~/.config/i3/scripts/powermenu.sh
 ## lock screen
@@ -141,16 +144,21 @@ bindsym $mod+Shift+r restart
 ## exit menu
 bindsym $mod+Shift+e exec ~/.config/i3/scripts/powermenu.sh
 
-# --- media keys ---
-bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ +5%
-bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ -5%
-bindsym XF86AudioMute exec --no-startup-id pactl set-sink-mute @DEFAULT_SINK@ toggle
-bindsym XF86AudioMicMute exec --no-startup-id pactl set-source-mute @DEFAULT_SOURCE@ toggle
-bindsym XF86MonBrightnessUp exec --no-startup-id brightnessctl set +5%
-bindsym XF86MonBrightnessDown exec --no-startup-id brightnessctl set 5%-
+# --- media keys (osd.sh = change + on-screen popup) ---
+bindsym XF86AudioRaiseVolume exec --no-startup-id ~/.config/i3/scripts/osd.sh vol up
+bindsym XF86AudioLowerVolume exec --no-startup-id ~/.config/i3/scripts/osd.sh vol down
+bindsym XF86AudioMute exec --no-startup-id ~/.config/i3/scripts/osd.sh vol mute
+bindsym XF86AudioMicMute exec --no-startup-id ~/.config/i3/scripts/osd.sh mic
+bindsym XF86MonBrightnessUp exec --no-startup-id ~/.config/i3/scripts/osd.sh bri up
+bindsym XF86MonBrightnessDown exec --no-startup-id ~/.config/i3/scripts/osd.sh bri down
 bindsym XF86AudioPlay exec --no-startup-id playerctl play-pause
 bindsym XF86AudioNext exec --no-startup-id playerctl next
 bindsym XF86AudioPrev exec --no-startup-id playerctl previous
+## volume / brightness without Fn keys
+bindsym $mod+F11 exec --no-startup-id ~/.config/i3/scripts/osd.sh vol down
+bindsym $mod+F12 exec --no-startup-id ~/.config/i3/scripts/osd.sh vol up
+bindsym $mod+F5 exec --no-startup-id ~/.config/i3/scripts/osd.sh bri down
+bindsym $mod+F6 exec --no-startup-id ~/.config/i3/scripts/osd.sh bri up
 
 # --- new browser windows open on the workspace you are on ---
 for_window [class="Thorium-browser"] move workspace current
