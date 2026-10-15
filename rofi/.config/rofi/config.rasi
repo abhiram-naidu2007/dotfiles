@@ -25,7 +25,10 @@ inputbar {
     children: [ prompt, entry ];
 }
 prompt { text-color: @accent; }
-entry { placeholder: "search"; placeholder-color: @dim; }
+entry { text-color: @fg; placeholder: "search"; placeholder-color: @dim; cursor-color: @accent; }
+inputbar { text-color: @fg; }
+element-text { text-color: inherit; }
+message, textbox { text-color: @fg; }
 listview { lines: 8; columns: 1; scrollbar: false; spacing: 4px; fixed-height: true; }
 element { padding: 8px 10px; spacing: 10px; border-radius: 8px; }
 element normal.normal, element alternate.normal, element normal.active, element alternate.active { background-color: transparent; text-color: @fg; }

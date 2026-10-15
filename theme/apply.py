@@ -53,7 +53,7 @@ def palette(wallpaper):
     # fixed semantic colours, brightened to stay readable
     p = {
         "bg": bg, "surface": surf, "fg": fg,
-        "dim": lighten_to(rgb("#7f8799"), bg, 4.5),
+        "dim": lighten_to(rgb("#7f8799"), surf, 5.5),
         "accent": accent,
         "ok": lighten_to(rgb("#8fbf7f"), bg, 4.5),
         "warn": lighten_to(rgb("#e5b567"), bg, 4.5),

@@ -6,10 +6,13 @@
 [urgency_low]
     background = "{bg}"
     foreground = "{dim}"
+    highlight = "{accent}"
 [urgency_normal]
     background = "{bg}"
     foreground = "{fg}"
+    highlight = "{accent}"
 [urgency_critical]
     background = "{bg}"
     foreground = "{fg}"
     frame_color = "{crit}"
+    highlight = "{crit}"

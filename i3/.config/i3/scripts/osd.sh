@@ -3,7 +3,7 @@
 # Volume: wpctl (PipeWire). Brightness: logind D-Bus (no root / video group needed).
 STEP=5
 notify() { # tag icon title value text
-    dunstify -r 9911 -u low -a osd -h "string:x-dunst-stack-tag:osd-$1" -h "int:value:$4" -i "$2" "$3" "$5"
+    dunstify -r 9911 -u normal -a osd -h "string:x-dunst-stack-tag:osd-$1" -h "int:value:$4" -i "$2" "$3" "$5"
 }
 vol() {
     case "$1" in
