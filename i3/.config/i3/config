@@ -160,6 +160,13 @@ bindsym $mod+F12 exec --no-startup-id ~/.config/i3/scripts/osd.sh vol up
 bindsym $mod+F5 exec --no-startup-id ~/.config/i3/scripts/osd.sh bri down
 bindsym $mod+F6 exec --no-startup-id ~/.config/i3/scripts/osd.sh bri up
 
+# --- limusic: scratchpad toggle + direct MPRIS control (launched on demand) ---
+for_window [class="(?i)limusic"] floating enable, resize set 1100 700, move position center, move scratchpad
+bindsym $mod+m exec --no-startup-id ~/.config/i3/scripts/limusic-toggle.sh
+bindsym $mod+F8 exec --no-startup-id playerctl -p limusic previous
+bindsym $mod+F9 exec --no-startup-id playerctl -p limusic play-pause
+bindsym $mod+F10 exec --no-startup-id playerctl -p limusic next
+
 # --- floating rules (dialogs, pickers) ---
 for_window [window_role="pop-up"] floating enable
 for_window [window_role="task_dialog"] floating enable

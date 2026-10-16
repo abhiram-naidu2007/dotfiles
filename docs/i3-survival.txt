@@ -54,6 +54,15 @@ i3 ITSELF
   Super+Shift+E ... exit menu (asks before logout)
   Check config before reload:  i3 -C -c ~/.config/i3/config
 
+MUSIC (limusic; not autostarted, launches on first press)
+  Super+M .......... open / show / hide limusic (scratchpad, floats over any workspace)
+  Super+F8 ......... previous track     Super+F9 ... play/pause     Super+F10 ... next track
+  Polybar music: left click play/pause, right click next, middle click show/hide
+  Quit to free RAM (~660 MB):  pkill -x limusic-app
+  Terminal:  playerctl -p limusic play-pause|next|previous|status
+             playerctl -p limusic position 30   volume 0.5   shuffle Toggle
+  In app: Ctrl+K search, Ctrl+H all shortcuts, Ctrl+wheel zoom
+
 MEDIA KEYS: volume, mute, brightness, play/next/prev work from the keyboard.
 
 WHERE THINGS LIVE (edit in ~/dotfiles, never in ~/.config; changes apply after Super+Shift+C)
