@@ -6,8 +6,10 @@ bat=$(ls -d $PS/BAT* 2>/dev/null | head -1); [ -z "$bat" ] && exit 0
 cap=$(<"$bat/capacity"); status=$(<"$bat/status")
 ac=0; for f in $PS/*/online; do [ -r "$f" ] && [ "$(<"$f")" = 1 ] && ac=1; done
 
-c() { grep -m1 "^$1 *=" "$HOME/.config/polybar/colors.ini" | sed 's/.*= *//'; }
-OK=$(c ok); WARN=$(c warn); CRIT=$(c crit); ACC=$(c accent)
+# one pass over colors.ini (no per-colour subprocesses)
+while IFS=' =' read -r k v; do
+    case $k in ok) OK=$v ;; warn) WARN=$v ;; crit) CRIT=$v ;; accent) ACC=$v ;; esac
+done < "$HOME/.config/polybar/colors.ini"
 
 lv=(󰁺 󰁻 󰁼 󰁽 󰁾 󰁿 󰂀 󰂁 󰂂 󰁹)
 ch=(󰢜 󰂆 󰂇 󰂈 󰢝 󰂉 󰢞 󰂊 󰂋 󰂅)
