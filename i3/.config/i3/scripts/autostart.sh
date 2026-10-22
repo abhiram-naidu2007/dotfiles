@@ -1,6 +1,11 @@
 #!/bin/bash
 # Runs on every i3 start/restart/reload (exec_always). Must be idempotent.
 # No xfsettingsd here: it grabs XFCE shortcuts (Super_L etc.) and breaks i3 keys.
+# Mirror laptop screen to HDMI monitor when plugged in (before bar/wallpaper so they see final layout)
+if xrandr | grep -q "^HDMI-1-0 connected"; then
+    xrandr --output eDP-1 --mode 1920x1080 --rate 60 --primary \
+           --output HDMI-1-0 --mode 1920x1080 --rate 60 --same-as eDP-1
+fi
 pkill -x picom;   picom -b
 pkill -x polybar; setsid polybar -q main >/dev/null 2>&1 &
 pgrep -x dunst >/dev/null || setsid dunst >/dev/null 2>&1 &
