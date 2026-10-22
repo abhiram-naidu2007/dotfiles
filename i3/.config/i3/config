@@ -40,6 +40,16 @@ bindsym $mod+i exec ~/.config/i3/scripts/settings.sh
 bindsym $mod+Escape exec ~/.config/i3/scripts/powermenu.sh
 ## lock screen
 bindsym $mod+g exec ~/dotfiles/lockscreen/lock.sh
+## display menu (mirror / extend / monitor / laptop)
+bindsym $mod+p exec ~/.config/i3/scripts/display.sh menu
+## display: mirror
+bindsym $mod+Control+m exec ~/.config/i3/scripts/display.sh mirror
+## display: extend
+bindsym $mod+Control+e exec ~/.config/i3/scripts/display.sh extend
+## display: external monitor only
+bindsym $mod+Control+o exec ~/.config/i3/scripts/display.sh monitor
+## display: laptop only
+bindsym $mod+Control+l exec ~/.config/i3/scripts/display.sh laptop
 ## this key list
 bindsym $mod+slash exec ~/.config/i3/scripts/cheatsheet.sh
 ## screenshot (screen)
@@ -175,6 +185,8 @@ for_window [class="Nm-connection-editor"] floating enable
 for_window [class="Xfce4-appearance-settings|Xfce4-settings-manager"] floating enable
 
 # --- autostart ---
+# Mirror to external monitor once at login (exec, not exec_always: a reload must not undo Super+Ctrl+E)
+exec --no-startup-id ~/.config/i3/scripts/display.sh auto
 exec_always --no-startup-id ~/.config/i3/scripts/autostart.sh
 exec --no-startup-id xss-lock --transfer-sleep-lock -- ~/dotfiles/lockscreen/lock.sh
 exec --no-startup-id /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1
