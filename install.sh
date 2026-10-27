@@ -3,16 +3,20 @@
 #   packages  apt + uv packages for the i3 desktop      (sudo)
 #   link      back up clashing files, then stow every package into ~
 #   theme     generate colours from the current wallpaper
-#   user      XFCE keybinding + lock command + idle lock hook (no sudo)
+#   user      XFCE keybinding + lock command + idle lock hook + wallpaper timer (no sudo)
 #   system    SDDM + Dog Samurai theme                  (sudo)
 #   all       packages link theme user system
 set -euo pipefail
 DOT="$(cd "$(dirname "$0")" && pwd)"
 LOCK="$DOT/lockscreen/lock.sh"
-STOW_PKGS=(i3 polybar rofi dunst picom ghostty fish gtk thorium)
+STOW_PKGS=(i3 polybar rofi dunst picom ghostty fish gtk thorium systemd)
 APT_PKGS=(i3 polybar rofi dunst picom fish starship stow fonts-inter autotiling feh
           policykit-1-gnome brightnessctl playerctl maim xclip network-manager-gnome
-          btop tty-clock ncal)
+          btop tty-clock ncal fastfetch
+          i3lock xss-lock imagemagick libnotify-bin x11-xserver-utils xinput
+          pipewire-pulse wireplumber pavucontrol blueman arandr
+          papirus-icon-theme bibata-cursor-theme gnome-themes-extra)
+# Not in apt: JetBrainsMono Nerd Font (~/.local/share/fonts), ghostty, thorium, limusic AppImage
 DRY=0
 
 run() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
@@ -49,6 +53,9 @@ user() {
     printf '[Desktop Entry]\nType=Application\nName=xss-lock\nExec=xss-lock --transfer-sleep-lock -- %s\n' "$LOCK" > ~/.config/autostart/xss-lock.desktop
   fi
   run xfconf-query -c xfce4-screensaver -p /lock/enabled -n -t bool -s false
+  # Day/night wallpaper swap (06:00 / 18:00); unit files come from the systemd stow package
+  run systemctl --user daemon-reload
+  run systemctl --user enable --now wallpaper.timer
 }
 
 system() {
