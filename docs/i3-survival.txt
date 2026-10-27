@@ -16,6 +16,14 @@ OPEN THINGS
   Super+E .......... file manager
   Super+G .......... lock screen
   Print ............ screenshot of screen     Super+Shift+S ... select an area (saved in ~/Pictures + clipboard)
+  Super+I .......... quick settings (sound, network, bluetooth, display, re-theme)
+  Super+Shift+W .... showcase layout on workspace 3 (press again to close)
+
+DISPLAYS (external monitor)
+  Super+P .......... display menu: mirror / extend / monitor only / laptop only
+  Super+Ctrl+M ..... mirror        Super+Ctrl+E ..... extend (monitor to the right)
+  Super+Ctrl+O ..... monitor only  Super+Ctrl+L ..... laptop only
+  At login the laptop screen is mirrored automatically when a monitor is plugged in.
 
 WINDOWS (they tile: never overlap, no title bar, no X button)
   Super+Q .......... CLOSE focused window
