@@ -1,0 +1,7 @@
+
+[Unit]
+Description=Set desktop wallpaper
+
+[Service]
+Type=oneshot
+ExecStart=%h/dotfiles/wallpaper/wallpaper.sh
