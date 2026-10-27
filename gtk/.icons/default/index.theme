@@ -1,0 +1,3 @@
+[Icon Theme]
+# X cursor for every app (and the desktop); falls back to Adwaita until bibata-cursor-theme is installed
+Inherits=Bibata-Modern-Ice

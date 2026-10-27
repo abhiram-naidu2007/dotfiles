@@ -2,32 +2,31 @@
 # Any app that sends a desktop notification (notify-send, Thorium, nm-applet,
 # blueman, i3 scripts ...) shows up here; no per-app setup needed.
 [global]
-    monitor = 0
     follow = mouse
-    width = (260, 380)
+    width = (280, 380)
     origin = bottom-right
-    offset = (18, 18)
+    offset = (16, 16)
     gap_size = 8
     corner_radius = 12
-    frame_width = 2
+    frame_width = 1
     padding = 14
     horizontal_padding = 16
     text_icon_padding = 14
-    font = Inter 11
+    font = Inter 10
     markup = full
-    format = "<b>%s</b>\n%b"
+    format = "<b>%s</b>\n<span size='small'>%b</span>"
     alignment = left
     word_wrap = yes
     ellipsize = end
     icon_position = left
     min_icon_size = 32
     max_icon_size = 48
-    icon_theme = elementary-xfce-dark
+    icon_theme = "Papirus-Dark, elementary-xfce-dark"
     enable_recursive_icon_lookup = true
     progress_bar = true
-    progress_bar_height = 10
+    progress_bar_height = 8
     progress_bar_frame_width = 0
-    progress_bar_corner_radius = 5
+    progress_bar_corner_radius = 4
     progress_bar_min_width = 160
     stack_duplicates = true
     hide_duplicate_count = false
@@ -43,5 +42,5 @@
 [osd]
     appname = osd
     timeout = 1.5
-    format = "%s  <b>%b</b>"
+    format = "<b>%s</b>  %b"
     history_ignore = yes

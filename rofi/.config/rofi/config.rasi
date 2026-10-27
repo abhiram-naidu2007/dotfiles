@@ -1,37 +1,69 @@
 configuration {
     modi: "drun,run,window";
     show-icons: true;
-    icon-theme: "elementary-xfce-dark";
-    display-drun: " ";
-    display-window: " ";
+    icon-theme: "Papirus-Dark";
+    display-drun: "󰀻";
+    display-run: "";
+    display-window: "󰖯";
     drun-display-format: "{name}";
-    font: "JetBrainsMono Nerd Font 11";
+    window-format: "{c}  {t}";
+    font: "Inter Medium 11";
 }
 @import "colors.rasi"
-* { background-color: transparent; text-color: @fg; }
+
+* {
+    background-color: transparent;
+    text-color: @fg;
+}
 window {
-    width: 34em;
-    border: 2px;
-    border-color: @accent;
+    width: 36em;
+    border: 1px;
+    border-color: @surface1;
     border-radius: 12px;
     background-color: @bg;
+    location: center;
 }
-mainbox { padding: 12px; spacing: 10px; }
+mainbox { padding: 14px; spacing: 12px; border: 0; children: [ inputbar, message, listview ]; }
+
 inputbar {
-    padding: 8px 12px;
-    spacing: 8px;
-    border-radius: 8px;
+    padding: 10px 14px;
+    spacing: 10px;
+    border-radius: 10px;
     background-color: @surface;
     children: [ prompt, entry ];
 }
-prompt { text-color: @accent; }
-entry { text-color: @fg; placeholder: "search"; placeholder-color: @dim; cursor-color: @accent; }
-inputbar { text-color: @fg; }
-element-text { text-color: inherit; }
-message, textbox { text-color: @fg; }
-listview { lines: 8; columns: 1; scrollbar: false; spacing: 4px; fixed-height: true; }
-element { padding: 8px 10px; spacing: 10px; border-radius: 8px; }
-element normal.normal, element alternate.normal, element normal.active, element alternate.active { background-color: transparent; text-color: @fg; }
-element selected.normal { background-color: @accent; text-color: @bg; }
-element-text { vertical-align: 0.5; }
-element-icon { size: 1.4em; }
+prompt { text-color: @accent; font: "JetBrainsMono Nerd Font 13"; vertical-align: 0.5; }
+entry {
+    text-color: @fg;
+    placeholder: "Search…";
+    placeholder-color: @dim;
+    cursor-color: @accent;
+    vertical-align: 0.5;
+}
+
+message { padding: 0 4px; border: 0; }
+textbox { text-color: @dim; }
+
+listview {
+    lines: 8;
+    columns: 1;
+    fixed-height: true;
+    scrollbar: false;
+    spacing: 4px;
+    border: 0;
+}
+element {
+    padding: 9px 12px;
+    spacing: 12px;
+    border-radius: 10px;
+}
+element normal.normal, element alternate.normal { background-color: transparent; text-color: @fg; }
+element normal.active, element alternate.active { background-color: transparent; text-color: @accent2; }
+element normal.urgent, element alternate.urgent { background-color: transparent; text-color: @crit; }
+element selected.normal, element selected.active {
+    background-color: @surface1;
+    text-color: @accent;
+}
+element selected.urgent { background-color: @crit; text-color: @mantle; }
+element-icon { size: 1.5em; vertical-align: 0.5; }
+element-text { text-color: inherit; vertical-align: 0.5; }
