@@ -15,7 +15,9 @@ APT_PKGS=(i3 polybar rofi dunst picom fish starship stow fonts-inter autotiling 
           btop tty-clock ncal fastfetch
           i3lock xss-lock imagemagick libnotify-bin x11-xserver-utils xinput
           pipewire-pulse wireplumber pavucontrol blueman arandr
-          papirus-icon-theme bibata-cursor-theme gnome-themes-extra)
+          papirus-icon-theme bibata-cursor-theme gnome-themes-extra
+          exo-utils xfce4-settings xfce4-power-manager neovim atril
+          fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji)
 # Not in apt: JetBrainsMono Nerd Font (~/.local/share/fonts), ghostty, thorium, limusic AppImage
 DRY=0
 
