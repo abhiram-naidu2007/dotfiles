@@ -36,6 +36,10 @@ bindsym $mod+Tab exec rofi -show window
 bindsym $mod+b exec thorium-browser --new-window
 ## browser: choose profile (3 accounts)
 bindsym $mod+Shift+b exec ~/.config/i3/scripts/browser.sh
+## WhatsApp (ZapFast: open / focus)
+bindsym $mod+z exec zapfast
+## WhatsApp (ZapFast: quit, not just tray)
+bindsym $mod+Shift+z exec zapfast quit
 ## file manager
 bindsym $mod+e exec exo-open --launch FileManager
 ## quick settings menu
