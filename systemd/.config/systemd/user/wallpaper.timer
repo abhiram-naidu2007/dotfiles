@@ -6,6 +6,10 @@ Description=Change wallpaper based on time
 OnCalendar=*-*-* 06:00:00
 OnCalendar=*-*-* 18:00:00
 Persistent=true
+# Dual-boot: Windows keeps the hardware clock in local time, so Linux boots
+# 5:30 h ahead until chrony steps the clock back. Re-pick the wallpaper then.
+OnClockChange=true
+OnTimezoneChange=true
 
 [Install]
 WantedBy=timers.target
