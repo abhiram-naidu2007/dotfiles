@@ -1,5 +1,5 @@
 #!/bin/bash
-# Battery for polybar, drawn as a hit-point bar: HP ━━━━━━━━ 72%
+# Battery for polybar, drawn as a hit-point bar: HP ━━━━━━ 72%
 # The bar is green above half, yellow below, red under a fifth. Charging = bolt, on AC but full = plug.
 # Reads sysfs directly, so it never claims "charging" unless the kernel does.
 PS=/sys/class/power_supply
@@ -41,10 +41,10 @@ else out "$DIM" "󰂑" "?"; exit 0; fi
 [ "$cap" -gt 100 ] && cap=100
 [ "$status" = Full ] && cap=100
 
-# eight segments; a nearly empty pack still shows one
+# six segments; a nearly empty pack still shows one
 col=$OK; [ "$cap" -lt 50 ] && col=$WARN; [ "$cap" -lt 20 ] && col=$CRIT
-seg=$(( (cap + 6) / 12 )); [ $seg -gt 8 ] && seg=8; [ $seg -lt 1 ] && seg=1
-full=━━━━━━━━
+seg=$(( (cap + 8) / 17 )); [ $seg -gt 6 ] && seg=6; [ $seg -lt 1 ] && seg=1
+full=━━━━━━
 bar="%{F$col}${full:0:seg}%{F$EMPTY}${full:seg}%{F-}"
 icon=
 if [ "$status" = Charging ]; then icon="%{T2}%{F$OK}󱐋%{F-}%{T-}"

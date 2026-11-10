@@ -5,10 +5,11 @@ include colors
 
 set recolor                 true
 set recolor-keephue         true      # figures keep their hues
+set recolor-reverse-video   true      # photos and scanned figures keep their own colours
 set selection-clipboard     clipboard # mouse selection goes to Ctrl+V
 set selection-notification  false
-set adjust-open             width
-set guioptions              ""        # no bars; Ctrl+N shows the status bar
+set adjust-open             best-fit  # open with the whole page in view; s = fit width, a = whole page
+set guioptions              "s"       # status bar: file name and page; Ctrl+N hides it
 set font                    "Inter 10"
 set page-v-padding          8
 set page-h-padding          8
@@ -21,12 +22,18 @@ set statusbar-h-padding     12
 set statusbar-v-padding     6
 set database                sqlite    # remembers the page of every file
 
-# LaTeX / Typst: Ctrl+click jumps to the source line in a running nvim
-set synctex                 true
-set synctex-editor-command  "nvim --headless -c \"VimtexInverseSearch %{line} '%{input}'\""
-
-# keys (the defaults stay: j k h l, J K page, gg G, / search, f follow link, Tab index, a s fit page/width)
+# F1 lists every key (keys.sh). The defaults stay: j k h l, J K page, gg G, / search,
+# f follow link, Tab index, a s fit page/width. The mouse works too: wheel scrolls,
+# Ctrl+wheel zooms, dragging selects text and copies it, links are clickable.
+# (zathura starts the command without a shell, so "~" must be expanded by sh)
+map <F1>    exec "sh -c ~/.config/zathura/keys.sh"
+map [fullscreen] <F1> exec "sh -c ~/.config/zathura/keys.sh"
 map i       recolor                   # palette colours <-> the document's own
+# page colours, whatever the desktop mood: Alt+1 desktop palette, Alt+2 paper, Alt+3 night, Alt+4 the document's own
+map <A-1>   exec "sh -c '~/.config/zathura/scheme.sh $DBUS desktop'"
+map <A-2>   exec "sh -c '~/.config/zathura/scheme.sh $DBUS paper'"
+map <A-3>   exec "sh -c '~/.config/zathura/scheme.sh $DBUS night'"
+map <A-4>   exec "sh -c '~/.config/zathura/scheme.sh $DBUS own'"
 map u       scroll half-up
 map d       scroll half-down
 map D       toggle_page_mode          # one page <-> two side by side

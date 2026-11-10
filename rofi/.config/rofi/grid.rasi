@@ -1,9 +1,9 @@
 /* Picture grid: the wallpaper picker (`rice wall pick`). */
 @import "config.rasi"
 
-window { width: 1180px; border-radius: 24px; }
+window { width: 1180px; }
 mainbox { padding: 18px; spacing: 14px; }
 listview { lines: 3; columns: 4; fixed-columns: true; spacing: 10px; flow: horizontal; }
-element { orientation: vertical; padding: 8px; spacing: 6px; border-radius: 14px; }
+element { orientation: vertical; padding: 8px; spacing: 6px; border-radius: 12px; }
 element-icon { size: 150px; horizontal-align: 0.5; }
 element-text { horizontal-align: 0.5; font: "Inter 9"; }

@@ -1,27 +1,102 @@
 # target: ~/.local/share/thorium-ext/rice-newtab/newtab.js
-const clock = document.getElementById("clock");
-const hello = document.getElementById("hello");
-const cat = document.getElementById("cat");
-const FACES = ["(=^･ω･^=)", "(=^-ω-^=)", "ヽ(=^ω^=)ノ"];
+// New tab page. data.js (written by ~/dotfiles/art/sprites.py) provides SPRITES and MATH.
+const $ = (id) => document.getElementById(id);
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
+// --- clock
 function tick() {
   const now = new Date();
-  clock.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  $("clock").textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const h = now.getHours();
-  hello.textContent = h < 5 ? "still awake?" : h < 12 ? "good morning" : h < 18 ? "good afternoon" : "good evening";
+  const hello = h < 5 ? "still awake?" : h < 12 ? "good morning" : h < 18 ? "good afternoon" : "good evening";
+  $("date").textContent = now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" }) + "  ·  " + hello;
   setTimeout(tick, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()));
 }
 tick();
 
-cat.addEventListener("click", () => {
-  cat.textContent = FACES[Math.floor(Math.random() * FACES.length)] + " ♡";
-  cat.classList.remove("happy");
-  void cat.offsetWidth;
-  cat.classList.add("happy");
+// --- search: the browser's default engine; something that looks like an address is opened
+$("search").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = $("q").value.trim();
+  if (!text) return;
+  if (/^[a-z]+:\/\//i.test(text) || (/^[^\s]+\.[a-z]{2,}(\/\S*)?$/i.test(text) && !text.includes(" "))) {
+    location.href = /^[a-z]+:\/\//i.test(text) ? text : "https://" + text;
+  } else {
+    chrome.search.query({ text, disposition: "CURRENT_TAB" });
+  }
 });
 
-document.getElementById("search").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = document.getElementById("q").value.trim();
-  if (text) chrome.search.query({ text, disposition: "CURRENT_TAB" });
-});
+// --- bookmarks bar as tiles
+if (window.chrome && chrome.bookmarks) {
+  chrome.bookmarks.getTree((tree) => {
+    const bar = (tree[0].children || [])[0];
+    const urls = (bar && bar.children ? bar.children : []).filter((b) => b.url && /^https?:/.test(b.url)).slice(0, 14);
+    for (const b of urls) {
+      const a = document.createElement("a");
+      a.href = b.url;
+      a.title = b.title;
+      const icon = document.createElement("img");
+      icon.src = chrome.runtime.getURL("/_favicon/") + "?pageUrl=" + encodeURIComponent(b.url) + "&size=64";
+      const label = document.createElement("span");
+      label.textContent = b.title || new URL(b.url).hostname.replace(/^www\./, "");
+      a.append(icon, label);
+      $("links").append(a);
+    }
+  });
+}
+
+// --- a wild Pokémon: one character of d per pixel, "." is empty
+function wild() {
+  if (typeof SPRITES === "undefined" || !SPRITES.length) return;
+  const s = pick(SPRITES), scale = 5, c = $("sprite"), ctx = c.getContext("2d");
+  c.width = s.w; c.height = s.h;
+  c.style.width = s.w * scale + "px"; c.style.height = s.h * scale + "px";
+  const digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  for (let i = 0; i < s.d.length; i++) {
+    if (s.d[i] === ".") continue;
+    ctx.fillStyle = s.p[digits.indexOf(s.d[i])];
+    ctx.fillRect(i % s.w, Math.floor(i / s.w), 1, 1);
+  }
+  const name = s.n.replace(/-/g, " ").replace(/^./, (ch) => ch.toUpperCase());
+  $("wildname").innerHTML = "a wild <b></b> appeared!";
+  $("wildname").querySelector("b").textContent = name;
+  $("wild").classList.remove("hop"); void $("wild").offsetWidth; $("wild").classList.add("hop");
+}
+$("wild").addEventListener("click", wild);
+wild();
+
+// --- a line of mathematics
+function line() {
+  if (typeof MATH === "undefined" || !MATH.length) return;
+  const m = pick(MATH);
+  $("formula").textContent = m[0];
+  $("who").textContent = m[1];
+}
+$("math").addEventListener("click", line);
+line();
+
+// --- behind everything, a harmonograph draws itself once (two damped pendulums), then rests
+(function curve() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const c = $("curve"), ctx = c.getContext("2d"), css = getComputedStyle(document.documentElement);
+  const a = css.getPropertyValue("--a").trim(), b = css.getPropertyValue("--b").trim();
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  c.width = innerWidth * dpr; c.height = innerHeight * dpr;
+  const ratio = pick([[2, 3], [3, 4], [1, 2], [3, 5], [4, 5], [5, 6]]);
+  const f = [ratio[0] + (Math.random() - .5) * .008, ratio[1] + (Math.random() - .5) * .008, ratio[0], ratio[1]];
+  const ph = f.map(() => Math.random() * Math.PI * 2), damp = f.map(() => .004 + Math.random() * .006);
+  const scale = Math.min(c.width, c.height) * .23, cx = c.width / 2, cy = c.height / 2;
+  const at = (t) => [
+    cx + scale * (Math.sin(f[0] * t + ph[0]) * Math.exp(-damp[0] * t) + Math.sin(f[1] * t + ph[1]) * Math.exp(-damp[1] * t)),
+    cy + scale * (Math.sin(f[2] * t + ph[2]) * Math.exp(-damp[2] * t) + Math.sin(f[3] * t + ph[3]) * Math.exp(-damp[3] * t))];
+  const END = 240, STEP = .012, PER_FRAME = 26;      // about 13 seconds of drawing at 60 frames a second
+  let t = 0, last = at(0);
+  ctx.lineWidth = dpr; ctx.lineJoin = "round"; ctx.globalAlpha = .5;
+  (function frame() {
+    ctx.strokeStyle = t / END < .5 ? a : b;
+    ctx.beginPath(); ctx.moveTo(last[0], last[1]);
+    for (let i = 0; i < PER_FRAME && t < END; i++) { t += STEP; last = at(t); ctx.lineTo(last[0], last[1]); }
+    ctx.stroke();
+    if (t < END) requestAnimationFrame(frame);
+  })();
+})();

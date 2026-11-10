@@ -1,0 +1,74 @@
+launcher	Super+Space	open the launcher (Apps). Ctrl+Tab / Shift+Left/Right: next tab, keeps what you typed
+launcher	Enter	open the selected row. Esc closes
+launcher	=2^10	calculate from any tab that searches files; the Calc tab does it without the =
+launcher	?words	search the web from the Files tab
+launcher	Shift+Enter	Files tab: show the file in its folder
+launcher	Ctrl+Y	Files tab: copy the path
+launcher	Ctrl+T	Files tab: open a terminal in that folder
+launcher	Ctrl+O	Files tab: edit in Neovim
+files	thesis pdf	all words must match, at least one in the file name
+files	Thesis	a capital letter makes that word case sensitive
+files	notes/	everything inside a folder whose name contains notes
+files	docs/intro	intro somewhere below a folder containing docs
+files	pdf: img: vid: audio: doc: code: zip:	only that kind of file; with no word: newest first
+files	dir: file: home: sys:	folders only, files only, only your files, only system files
+files	ext:rs *.png	by extension
+bar	Poke Ball	click: launcher. right click: file search. middle click: new mathematical wallpaper
+bar	globe	click: bookmarks and web search. right click: new browser window. middle: choose profile
+bar	workspaces	click to go there; wheel to cycle
+bar	music pill	click title: play/pause. arrows: previous/next. wheel: seek 5 s. right click title: hide it
+bar	clock / date	click the time: seconds. click the date: calendar
+bar	REC	shown while recording; click to stop
+bar	speaker	wheel: volume. click: mute. right click: mixer
+bar	HP	battery; click: quick settings
+bar	moon / sun / book	mood. click: next mood. right click: mood and wallpaper menu
+bar	power	power menu
+terminal	rice help	everything `rice` can do (wallpaper, mood, live wallpaper, math art)
+terminal	rice wall pick	wallpaper picker: day/night, live attractors, pictures in ~/Pictures/wallpapers
+terminal	rice mode night|day|paper	change the mood of the whole desktop
+terminal	rice live on|off|next|NAME	animated wallpaper: attractors, harmonograph, phyllotaxis, chladni, hills, temple, jaali, kolam, manga
+terminal	rice art [kind]	draw a new mathematical wallpaper: attractor harmonograph julia sacks rose
+terminal	evry WORDS	find files anywhere on the disk (same search as the launcher)
+terminal	ev	the same, live, with a preview. Enter open, Alt+Enter cd there, Ctrl+O edit, Ctrl+Y copy path
+terminal	z NAME / zi	jump to a folder you have been in / pick one from a list
+terminal	Ctrl+R / Ctrl+T / Alt+C	search history / insert a file / cd into a folder (fzf)
+terminal	ls ll lt cat	eza and bat: icons, git column, tree, syntax colours
+terminal	pdf FILE	open in zathura
+terminal	pokefetch	system information beside a random Pokemon
+terminal	nvim	editor; inside it Space shows its keys, Space t k opens its guide
+terminal	Right arrow	accept the grey suggestion. Alt+Right: one word of it
+nvim	Space	wait a moment: a popup lists every key that can follow
+nvim	Space Space	find a file in this project
+nvim	Space /	search text in all files
+nvim	Space e	file tree. - opens the folder of this file as an editable list
+nvim	Space f e	any file on the disk
+nvim	Space r	save and run this file (a .typ file: live PDF in zathura)
+nvim	Space w	write. Space x closes the buffer. Tab / Shift+Tab switch buffers
+nvim	s + two letters	jump anywhere on screen
+nvim	gd grr K grn gra	definition, references, docs, rename, code action
+nvim	Space c f	format. Space u f: format on save on/off
+nvim	Space g g	lazygit
+nvim	Space t t / t l	a trick to practise / all tricks
+nvim	Space t h / t p / t g	habit hints, motion marks, practice game
+nvim	Space t k	the full Neovim guide (docs/nvim.md)
+zathura	F1	this list
+zathura	j k / d u / J K	scroll / half a page / whole page (Space and Shift+Space too)
+zathura	gg G 12G	first page, last page, page 12
+zathura	Ctrl+O Ctrl+I	back / forward to where you were
+zathura	/words Enter, n N	search; next / previous hit
+zathura	+ - / a / s	zoom / fit the whole page / fit the width. Ctrl+wheel zooms too
+zathura	D	two pages side by side
+zathura	R	rotate
+zathura	F11 / F5	fullscreen / presentation
+zathura	i	desktop palette colours <-> the document's own colours
+zathura	Alt+1 Alt+2 Alt+3 Alt+4	page colours: desktop palette / paper (cream, ink) / night (black) / the document's own
+zathura	Tab	table of contents: j k move, l open a chapter, Enter go, Tab close
+zathura	f / F	show a number on every link: type it, Enter / only show where it leads
+zathura	mA 'A	remember this spot as A / jump back to it (any letter)
+zathura	mouse drag	select text: it is copied to the clipboard
+zathura	Ctrl+N	status bar on / off
+zathura	:print :info :bmark NAME	commands (Tab completes)
+zathura	r / p / q	reload / print / quit. The page you were on is remembered for every file
+browser	new tab	type in the box: an address opens, anything else is searched. Tiles: your bookmarks bar
+browser	Pokemon / formula	click for another one
+windows	Super + drag	move a floating window. Super + right drag: resize it

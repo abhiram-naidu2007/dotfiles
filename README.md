@@ -1,6 +1,6 @@
 # dotfiles
 
-Ubuntu 26.04, X11. i3 + polybar + rofi + dunst + picom + ghostty + fish/starship + zathura.
+Ubuntu 26.04, X11. i3 + polybar + rofi + dunst + picom + ghostty + fish/starship + zathura + Neovim.
 One palette for everything, read from the wallpaper (accent hues only; lightness and contrast are fixed in OKLCH), in three moods: **night**, **day**, **paper**.
 
 ## Install on a fresh machine
@@ -17,10 +17,14 @@ Each step is idempotent. `link` moves any clashing file to `.backup/<date>/` fir
 | Super+Space | launcher: **Apps**. Ctrl+Tab moves to Files, Calc, Windows and keeps what you typed |
 | Super+O | **Files**: every file on the disk, as you type (like Everything on Windows) |
 | Super+D | **Documents**: PDFs, newest first; Enter opens zathura |
+| Super+U | **Web**: bookmarks of every browser profile; anything else is opened or searched |
 | Super+= | **Calc**: qalc answers while you type; Enter copies. `=2^10` works in the Files tab too |
+| Super+Shift+S | screenshot: drag an area or click a window. Super+Ctrl+S: capture menu. Super+Ctrl+R: record the screen (again to stop) |
+| Super+C | clipboard history. Super+`: drop-down terminal |
 | Super+T | mood: night, day, paper. Super+Shift+T: mood and wallpaper menu |
-| Super+Ctrl+W | wallpaper picker. Super+Ctrl+A: draw a new mathematical wallpaper |
-| Super+/ | every key (live list); also `docs/i3-survival.txt` |
+| Super+Ctrl+W | wallpaper picker: day/night, live attractors, pictures. Super+Ctrl+A: draw a new mathematical wallpaper |
+| Super+Ctrl+D | live wallpaper on / off (a strange attractor, turning). Super+Ctrl+N: next attractor |
+| Super+/ | **every key and command**, searchable (the launcher's Keys tab). Sources: the `## text` lines in the i3 config and `rice/.local/share/rice/keys.tsv`. Printed sheets: `docs/i3-survival.txt`, `docs/nvim.md` |
 
 - Look: `rice` (see `rice help`). Never edit generated files (`colors.*`, `starship.toml`, `gtk.css`, `nvim/colors/rice.lua` ...): edit `theme/templates/*` and run `rice`.
 - Wallpapers: anything in `wallpaper/` or `~/Pictures/wallpapers/`. Preview a palette: `theme/apply.py --check --mode day IMAGE`.
@@ -47,7 +51,29 @@ Each step is idempotent. `link` moves any clashing file to `.backup/<date>/` fir
 | day | near-white, deeper accents | GTK apps switch to the light theme live (xsettingsd) |
 | paper | cream and ink, fixed palette | the wallpaper is reprinted in ink; picom runs every window through an e-ink shader (`picom/.config/picom/shaders/paper.glsl`); zathura reads like a book |
 
-A change reaches open windows at once: polybar, i3, dunst, ghostty, fish, Neovim (colorscheme `rice`), zathura, GTK apps, cava. Thorium picks its theme up on restart.
+A change reaches open windows at once: polybar, i3, dunst, ghostty, fish, Neovim (colorscheme `rice`), zathura, GTK apps, cava, the live wallpaper, the browser's next new tab. Thorium's frame colours change on restart.
+
+## Live wallpapers (`mathwall/`, `rice live on|off|always|next|NAME`, or pick one in Super+Ctrl+W)
+An OpenGL program with three kinds of scene, all asleep unless the wallpaper is in full view (empty workspace, on mains, screen on):
+
+| Scene | What |
+|---|---|
+| aizawa, lorenz, thomas, halvorsen, dadras | one orbit of a chaotic system as a 240 000-vertex line, slowly turning, pulses running along it |
+| harmonograph, phyllotaxis | a pendulum figure that keeps retuning itself; a sunflower spiral breathing around the golden angle |
+| chladni | sand figures of a vibrating plate whose modes drift |
+| hills | a slow flight over grass hills and lakes, in real 3D (every pixel is a ray walked through a height field): cumulus, cloud shadows, flowers; moonlight, stars and fireflies on a dark mood |
+| temple | a temple town across its tank: a seven-storey gopuram with barrel roof and pot finials, palms, hills, all mirrored in the water; dusk with oil lamps, or dawn with mist and birds |
+| jaali | three Mughal arches filled with the star-and-cross lattice; a light moves behind and throws the pattern on the floor |
+| kolam | a sikku kolam: one line looping round every dot of a diamond grid, redrawn every twenty seconds |
+| manga | screentone sky, halftone moon, drawn clouds, a sea of wave scales, petals in the accent colour |
+
+The last six are shader files in `rice/.local/share/mathwall/scenes/` (one function each; `_common.glsl` documents what a scene can use). A new `.frag` file there is a new wallpaper. Scenes marked `// own-colours` (hills, temple) are where the desktop palette is read from while they are on; the others are drawn in the palette. Cost on this machine at 1080p (`mathwall --bench 60 --scene NAME`): 1 to 3 ms of GPU time per frame for the mathematical ones, jaali and kolam; 4.5 ms for temple, 6.5 ms for hills and manga (drawn at reduced size). That is at 30 frames a second, and nothing at all while a window is open. Choosing another scene fades to it; the running program is told which one through `$XDG_RUNTIME_DIR/mathwall.goto`.
+
+## Neovim (`nvim/`)
+Own config, 31 plugins, about 25 ms to start. Keys, trainers and a learning ladder: `docs/nvim.md`.
+
+## Browser (Thorium)
+`theme/templates/thorium-*` generate two unpacked extensions into `~/.local/share/thorium-ext`: the colour theme, and a new-tab page (wallpaper, clock, search, bookmark tiles, a wild Pokémon, a line of mathematics, a harmonograph that draws itself once). The same extension themes text selection and scrollbars on every page. Colours follow the mood on the next new tab; a changed manifest needs a browser restart.
 
 ## Layout
 | Dir | What |
@@ -55,8 +81,10 @@ A change reaches open windows at once: polybar, i3, dunst, ghostty, fish, Neovim
 | `i3/` | window manager config and scripts (power menu, screenshot, key list, browser profile picker, display layouts, showcase, compositor start) |
 | `polybar/ rofi/ dunst/ picom/ ghostty/ fish/ gtk/ zathura/ fastfetch/` | bar, launcher, notifications, compositor, terminal, shell, cursor, PDF reader, system info |
 | `evry/` | file index + search (Rust) and the live rofi tabs (C). `make -C evry install` |
+| `mathwall/` | the live wallpaper (C, OpenGL). `make -C mathwall install` |
+| `nvim/` | Neovim config |
 | `rice/` | `rice` (wallpaper, mood, math art, menus), `rice-greet` (the Pokémon and the line of mathematics in each new terminal), `rice-preview`, `math.txt` |
-| `art/` | `mathart.py`: wallpapers from mathematics (Clifford attractor, harmonograph, Julia set, Sacks prime spiral, Maurer rose), drawn in the palette's own colour system |
+| `art/` | `mathart.py`: wallpapers from mathematics (Clifford attractor, harmonograph, Julia set, Sacks prime spiral, Maurer rose), drawn in the palette's own colour system. `sprites.py`: Pokémon and mathematics data for the new-tab page |
 | `theme/` | `apply.py [--mode M] WALLPAPER`: pywal16 hues -> OKLCH palette -> every file in `templates/` rendered into `~/.config` |
 | `wallpaper/` | the day and night pictures (`rice wall auto` swaps them at 06:00 / 18:00 via `systemd/`) |
 | `lockscreen/` | `lock.sh` (i3lock): one lock for Super+G, idle, suspend |
@@ -67,5 +95,14 @@ A change reaches open windows at once: polybar, i3, dunst, ghostty, fish, Neovim
 
 Not in the repo: Pokémon sprites (`~/.local/share/pokemon-colorscripts`, fetched by `install.sh extras`) and the pictures in `~/Pictures/wallpapers`.
 
+## Shapes and type
+One rule each, everywhere: windows and notifications have a 12 px radius; menus and the launcher 16 px, with everything inside them 12 px; bar pills are fully round. Text is Inter; the bar, the terminal, keys and code are JetBrains Mono. Icons are Papirus (files, apps) and Nerd Font Material glyphs (bar, menus). Menus and workspace switches fade and rise; only opening and closing a window scales it.
+
+## Capture (`i3/.config/i3/scripts/capture.sh`)
+Screenshots go through `slop` (a 2 px frame in the accent colour) and `maim`. Recordings use ffmpeg with the Intel VAAPI encoder: the frame is uploaded, converted and encoded on the GPU (about 19% of one core at 1080p30; converting on the CPU cost a whole core), with x264 as the fallback. OBS Studio is installed for anything longer.
+
+## Compositor rules (`picom/`)
+Only managed windows get shadows, rounded corners and motion. Anything that places itself (menus, tooltips, drag icons, the screenshot selection) is shown exactly as its program drew it, and nothing but the launcher is blurred: a blur method without those rules blurs behind every translucent window, which put a smeared box around right-click menus and into area screenshots.
+
 ## Cost
-Nothing new runs all the time except xsettingsd (idle, 1 MB). Blur is on for rofi only, so it costs nothing until a menu is open. The paper shader is a few arithmetic operations per pixel and is loaded only in paper mood. The terminal greeting takes 3 ms.
+Nothing new runs all the time except xsettingsd (idle, 5 MB) and, when switched on, mathwall (asleep unless the workspace is empty). Blur is on for rofi only, so it costs nothing until a menu is open. The paper shader is a few arithmetic operations per pixel and is loaded only in paper mood. The terminal greeting takes 3 ms.

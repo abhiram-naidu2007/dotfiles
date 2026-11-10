@@ -150,6 +150,9 @@ def palette(wallpaper, mode="night"):
     p["ok"], p["warn"], p["crit"] = p["green"], p["yellow"], p["red"]
     # ANSI 0 / 8: the terminal's "black". By day they are the light greys, so
     # programs that paint bars with them still get dark text on a pale bar.
+    # The tray pill of the bar. Tray icons belong to the programs that own them and those keep
+    # the pale icons they started with, so by day the pill behind them is ink, not paper.
+    p["tray"] = p["surface"] if dark else p["fg"]
     p["ansi0"] = p["surface1"]
     p["ansi8"] = p["surface2"] if dark else p["dim"]
 

@@ -1,5 +1,6 @@
 #!/bin/bash
-# launcher.sh [apps|files|docs|calc|windows]: open the launcher on that tab.
+# launcher.sh [apps|files|docs|web|calc|windows|keys [WORD]]: open the launcher on that tab.
+#   keys = every key and command of this desktop; WORD pre-filters it (keys zathura).
 #   docs = the Files tab already filtered to PDFs, newest first: the reading list.
 # Ctrl+Tab / Shift+Left/Right change tab and keep what you typed.
 LIB="$HOME/.local/lib/rofi"
@@ -7,12 +8,16 @@ show=drun filter=
 case "${1:-apps}" in
   files)   show=files ;;
   docs)    show=files; filter="pdf: " ;;
+  web)     show=web ;;
   calc)    show=calc ;;
   windows) show=window ;;
+  keys)    show=help; [ -n "$2" ] && filter="$2 " ;;
 esac
-modes=drun,files,calc,window
+WEB="web:$HOME/.config/rofi/scripts/web.sh"
+KEYS="help:$HOME/.config/rofi/scripts/keys.sh"
+modes="drun,files,$WEB,calc,window,$KEYS"
 if ! [ -r "$LIB/files.so" ] || ! command -v evry >/dev/null; then   # not built yet: plain launcher
-  modes=drun,window
+  modes="drun,$WEB,window,$KEYS"
   case $show in files|calc) show=drun; filter= ;; esac
 fi
 # keep the file index fresh; the launcher never waits for it

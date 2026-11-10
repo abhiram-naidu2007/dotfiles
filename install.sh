@@ -2,7 +2,7 @@
 # Idempotent setup. Usage: ./install.sh [--dry-run] <step...>
 #   packages  apt + uv packages for the i3 desktop      (sudo)
 #   link      back up clashing files, then stow every package into ~
-#   build     compile evry (file search + rofi tabs) and mochi (desktop cat)
+#   build     compile evry (file search + rofi tabs), mochi (desktop cat), mathwall (live wallpaper); Neovim plugins
 #   extras    Pokémon terminal sprites, a first set of mathematical wallpapers
 #   theme     generate colours from the current wallpaper
 #   user      default apps, timers, lock hooks, XFCE keybinding (no sudo)
@@ -11,9 +11,9 @@
 set -euo pipefail
 DOT="$(cd "$(dirname "$0")" && pwd)"
 LOCK="$DOT/lockscreen/lock.sh"
-STOW_PKGS=(i3 polybar rofi dunst picom ghostty fish gtk thorium systemd zathura fastfetch rice apps)
+STOW_PKGS=(i3 polybar rofi dunst picom ghostty fish gtk thorium systemd zathura fastfetch rice apps nvim)
 APT_PKGS=(i3 polybar rofi dunst picom fish starship stow fonts-inter autotiling feh
-          policykit-1-gnome brightnessctl playerctl maim xclip network-manager-gnome
+          policykit-1-gnome brightnessctl playerctl maim slop xdotool ffmpeg obs-studio xclip xfce4-clipman network-manager-gnome
           btop tty-clock ncal fastfetch cava
           i3lock xss-lock imagemagick libnotify-bin x11-xserver-utils xinput
           pipewire-pulse wireplumber pavucontrol blueman arandr
@@ -21,8 +21,8 @@ APT_PKGS=(i3 polybar rofi dunst picom fish starship stow fonts-inter autotiling 
           exo-utils xfce4-settings xfce4-power-manager neovim
           zathura zathura-pdf-poppler zathura-djvu zathura-cb poppler-utils
           fzf bat eza zoxide chafa qalc jq
-          rofi-dev libglib2.0-dev libcairo2-dev libx11-dev libxext-dev build-essential
-          python3-numpy python3-pil python3-cairo
+          rofi-dev libglib2.0-dev libcairo2-dev libx11-dev libxext-dev libgl-dev build-essential lazygit
+          python3-numpy python3-pil python3-cairo python3-venv
           fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji)
 # Not in apt: JetBrainsMono Nerd Font (~/.local/share/fonts), ghostty, thorium, limusic AppImage, cargo (rustup.rs, for evry)
 DRY=0
@@ -52,7 +52,15 @@ link() {
 build() {
   run make -C "$DOT/evry" install      # ~/.local/bin/evry, ~/.local/lib/rofi/{files,calc}.so
   run make -C "$DOT/mochi" install     # ~/.local/bin/mochi
+  run make -C "$DOT/mathwall" install  # ~/.local/bin/mathwall (live wallpaper)
   run "$HOME/.local/bin/evry" index
+  # Neovim: Python language server and debugger through uv; the rest installs itself on first start
+  command -v basedpyright-langserver >/dev/null || run uv tool install basedpyright
+  [ -x "$HOME/.local/share/nvim/debugpy/bin/python" ] || {
+    run uv venv "$HOME/.local/share/nvim/debugpy"
+    run uv pip install --python "$HOME/.local/share/nvim/debugpy/bin/python" debugpy
+  }
+  run nvim --headless "+Lazy! restore" +qa
 }
 
 extras() {

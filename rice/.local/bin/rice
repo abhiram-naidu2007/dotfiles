@@ -5,10 +5,18 @@
 #   rice wall PATH           use this picture; the palette is read from it
 #   rice wall auto           day picture 06-18, night picture otherwise (the default)
 #   rice wall next|prev|random
-#   rice wall pick           choose from a thumbnail grid
+#   rice wall pick           choose from a thumbnail grid: pictures and live wallpapers
 #   rice mode night|day|paper|next
 #   rice art [KIND] [SEED]   draw a new mathematical wallpaper and use it
 #                            (attractor harmonograph julia sacks rose; default: random)
+#   rice live on|off|always|next|SCENE
+#                            animated wallpaper (mathwall): mathematics and drawn scenes.
+#                            on = moves only while the workspace is empty, never on battery;
+#                            always = also behind windows; next = the next attractor;
+#                            SCENE = any name from `mathwall --list`: strange attractors, harmonograph,
+#                            phyllotaxis, chladni, hills, temple, jaali, kolam, manga (your own: a .frag file in
+#                            ~/.local/share/mathwall/scenes)
+#                            (`rice wall pick` lists them next to the pictures)
 #   rice menu                the same choices as a rofi menu
 #   rice status | help
 #
@@ -40,11 +48,20 @@ wall_now() {
 }
 wall_list() { find -L "${WALLS[@]}" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort; }
 
+# Process ids by command name, read once per run: a dozen separate pgrep calls cost a
+# quarter of a second, and that is felt on every change of wallpaper.
+declare -A PIDS
+SCANNED=
+scan() { local pid comm; PIDS=(); while read -r pid comm; do PIDS[$comm]+=" $pid"; done < <(ps -eo pid=,comm=); SCANNED=1; }
+pids() { [ -n "$SCANNED" ] || scan; echo "${PIDS[$1]:-}"; }
+running() { [ -n "$SCANNED" ] || scan; [ -n "${PIDS[$1]:-}" ]; }
+
 # Signal every process called NAME, but only where it installed a handler:
 # an unhandled SIGUSR1/2 would kill it.
 nudge() {   # NAME SIGNAL-NUMBER
   local pid caught
-  for pid in $(pgrep -x "$1"); do
+  [ -n "$SCANNED" ] || scan
+  for pid in ${PIDS[$1]:-}; do
     caught=$(awk '/^SigCgt/ {print $2}' "/proc/$pid/status" 2>/dev/null)
     [ -n "$caught" ] && (( (0x$caught >> ($2 - 1)) & 1 )) && kill -"$2" "$pid"
   done
@@ -63,27 +80,30 @@ paper_wall() {
 }
 
 apply() {
-  local wall mode shown before after picom_before
+  local wall mode shown before after picom_before pid
+  scan
   wall=$(wall_now); mode=$(mode_now)
   [ -r "$wall" ] || { echo "rice: no such wallpaper: $wall" >&2; return 1; }
+  # the palette is read from what is on screen: the picture, or a live scene that has colours of its own
+  local source=$wall
+  if [ "$(live_now)" != off ] && live_own "$(live_scene)"; then
+    source=$(live_frame "$(live_scene)" 1600x900 "$mode"); [ -s "$source" ] || source=$wall
+  fi
   before=$(md5sum "$HOME/.config/i3/colors.conf" 2>/dev/null)
   picom_before=$(grep -E '^(shadow_opacity|picom_shader)=' "$HOME/.cache/theme/colors.sh" 2>/dev/null)
-  python3 -I "$DOT/theme/apply.py" --mode "$mode" "$wall" >/dev/null || { echo "rice: theme/apply.py failed" >&2; return 1; }
+  python3 -I "$DOT/theme/apply.py" --mode "$mode" "$source" >/dev/null || { echo "rice: theme/apply.py failed" >&2; return 1; }
   after=$(md5sum "$HOME/.config/i3/colors.conf" 2>/dev/null)
 
   shown=$wall
   [ "$mode" = paper ] && shown=$(paper_wall "$wall")
-  if pgrep -x i3 >/dev/null; then
+  if running i3; then
     feh --no-fehbg --bg-fill "$shown"
   else   # XFCE session
     for p in $(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep '/last-image$'); do
       xfconf-query -c xfce4-desktop -p "$p" -s "$shown"
     done
   fi
-  # launcher side panel: a tall slice from the middle of the picture
-  magick "$shown" -resize x828^ -gravity center -extent 450x828 "$CACHE/art.tmp.png" && mv "$CACHE/art.tmp.png" "$CACHE/art.png"
-
-  if pgrep -x i3 >/dev/null; then
+  if running i3; then
     nudge polybar 10                                    # SIGUSR1: restart with the new colours
     dunstctl reload 2>/dev/null
     [ "$before" != "$after" ] && i3-msg -q reload
@@ -94,16 +114,33 @@ apply() {
   nudge ghostty 12                                      # SIGUSR2: reload config
   nudge nvim 10                                         # SIGUSR1: Signal autocmd re-runs the colorscheme
   nudge cava 12                                         # SIGUSR2: reload colours
-  pkill -HUP -x xsettingsd 2>/dev/null                  # running GTK apps follow
+  for pid in $(pids xsettingsd); do kill -HUP "$pid" 2>/dev/null; done   # running GTK apps follow
   # open fish shells re-read their colours (a universal variable reaches every session)
   command -v fish >/dev/null && fish -c 'set -U __rice_stamp (date +%s%N)' 2>/dev/null &
-  for pid in $(pgrep -x zathura); do
+  for pid in $(pids zathura); do
     dbus-send --type=method_call --dest="org.pwmt.zathura.PID-$pid" /org/pwmt/zathura \
       org.pwmt.zathura.ExecuteCommand string:"source" 2>/dev/null &
   done
+  live_sync
+  # Everything above is what you see change. The pictures below are only needed the next time the
+  # launcher or a new browser tab opens, so they are made in the background and `rice` does not
+  # wait for them. The lock keeps two quick changes in order: the later one writes last.
+  (
+    flock 9
+    # what the launcher and the browser's new tab show: the wallpaper, or a still of the live one
+    panel=$shown
+    [ "$(live_now)" != off ] && panel=$(live_still 1600x900) && [ -s "$panel" ] || panel=$shown
+    # launcher side panel: a tall slice from the middle of the picture
+    magick "$panel" -resize x828^ -gravity center -extent 450x828 "$CACHE/art.tmp.png" && mv "$CACHE/art.tmp.png" "$CACHE/art.png"
+    # browser new-tab page: the same picture behind it, and its Pokémon + mathematics data
+    tab="$HOME/.local/share/thorium-ext/rice-newtab"
+    if [ -d "$tab" ]; then
+      magick "$panel" -resize 1600x900^ -gravity center -extent 1600x900 -quality 80 "$tab/bg.tmp.jpg" && mv "$tab/bg.tmp.jpg" "$tab/bg.jpg"
+      { [ -s "$tab/data.js" ] && [ "$tab/data.js" -nt "$HOME/.local/share/rice/math.txt" ]; } || python3 -I "$DOT/art/sprites.py" "$tab/data.js" >/dev/null
+    fi
+  ) 9> "$CACHE/panel.lock" >/dev/null 2>&1 &
   # the lock picture is rendered ahead of time, so locking (and suspend) stays instant
   [ -s "$HOME/.cache/theme/lock.png" ] || "$DOT/lockscreen/generate-lockscreen.sh"
-  wait
 }
 
 wall() {
@@ -125,10 +162,12 @@ wall() {
   apply
 }
 
-# Thumbnail grid. Thumbnails are made once and kept in the cache.
+# One grid for everything that can be the wallpaper: day/night, the live attractors, the pictures.
+# Thumbnails are made once and kept in the cache. The current choice is marked and preselected.
 wall_pick() {
-  local list thumbs=() f t i choice
+  local list thumbs=() scenes=() f i n choice cur=0 here
   mapfile -t list < <(wall_list)
+  command -v mathwall >/dev/null && mapfile -t scenes < <(mathwall --list)
   mkdir -p "$CACHE/thumbs"
   for f in "${list[@]}"; do
     thumbs+=("$CACHE/thumbs/$(printf '%s' "$f$(stat -c %Y "$f")" | md5sum | cut -c1-16).png")
@@ -136,12 +175,32 @@ wall_pick() {
   for i in "${!list[@]}"; do    # make the missing ones, six at a time
     [ -s "${thumbs[$i]}" ] || printf '%s\0%s\0' "${list[$i]}" "${thumbs[$i]}"
   done | xargs -0 -r -n 2 -P 6 sh -c 'magick "$0" -resize 300x300^ -gravity center -extent 300x300 "$1"'
+
+  # which tile is the current one (row 0 = day/night, then the live ones, then the pictures)
+  n=$(( ${#scenes[@]} + 1 ))
+  if [ "$(live_now)" != off ]; then
+    here=$(live_scene)
+    for i in "${!scenes[@]}"; do [ "${scenes[$i]}" = "$here" ] && cur=$(( i + 1 )); done
+  elif [ "$(wall_setting)" != auto ]; then
+    for i in "${!list[@]}"; do [ "${list[$i]}" = "$(wall_setting)" ] && cur=$(( i + n )); done
+  fi
+  for f in "${scenes[@]}"; do live_thumb "$f" >/dev/null & done     # make missing live thumbnails, all at once
+  wait
+  # stills of live scenes are kept per palette: drop the ones no palette has asked for in ten days
+  find "$CACHE/thumbs" -name 'live-*' -mtime +10 -delete 2>/dev/null &
+  # rows are written straight into the pipe: "$(...)" would drop the NUL that separates name and icon
   choice=$( { printf 'day / night\0icon\x1fweather-clear-night\n'
-              for i in "${!list[@]}"; do
-                f=${list[$i]##*/}; printf '%s\0icon\x1f%s\n' "${f%.*}" "${thumbs[$i]}"
-              done; } | rofi -dmenu -i -format i -p "󰸉" -theme grid -mesg "wallpaper: colours are read from the picture" )
+              for f in "${scenes[@]}"; do printf 'live · %s\0icon\x1f%s\n' "$f" "$(live_thumb "$f")"; done
+              for i in "${!list[@]}"; do f=${list[$i]##*/}; printf '%s\0icon\x1f%s\n' "${f%.*}" "${thumbs[$i]}"; done
+              printf 'add / remove pictures\0icon\x1ffolder-pictures\n'
+            } | rofi -dmenu -i -format i -p "󰸉" -theme grid -a "$cur" -selected-row "$cur" \
+    -mesg "wallpaper · <b>live</b> ones move while the workspace is empty · colours come from the last picture chosen · your pictures: ~/Pictures/wallpapers")
   [ -n "$choice" ] || return 0
-  if [ "$choice" = 0 ]; then wall auto; else wall "${list[$((choice - 1))]}"; fi
+  if [ "$choice" = 0 ]; then echo off > "$STATE/live"; wall auto
+  elif [ "$choice" -lt "$n" ]; then live "${scenes[$((choice - 1))]}"
+  elif [ "$choice" -ge $(( n + ${#list[@]} )) ]; then          # the folder tile: your own pictures go here
+    mkdir -p "$HOME/Pictures/wallpapers"; exec exo-open --launch FileManager "$HOME/Pictures/wallpapers"
+  else echo off > "$STATE/live"; wall "${list[$((choice - n))]}"; fi
 }
 
 mode() {
@@ -169,14 +228,89 @@ art() {
   wall "$dir/$1-$3.png" && say "$1" "seed $3"
 }
 
+live_now() { local l; l=$(cat "$STATE/live" 2>/dev/null); case $l in on|always) echo "$l" ;; *) echo off ;; esac; }
+# The attractor to show: the saved one, else whatever mathwall is on, else the first.
+live_scene() {
+  local sc; sc=$(cat "$STATE/live-scene" 2>/dev/null)
+  [ -n "$sc" ] || sc=$(cat "${XDG_RUNTIME_DIR:-/tmp}/mathwall.scene" 2>/dev/null)
+  echo "${sc:-aizawa}"
+}
+# One frame of a live scene as a PNG, cached. $1 = scene, $2 = WxH, $3 = mood (default: current).
+# Scenes drawn in the desktop palette are cached per palette; scenes with colours of their own
+# (hills, temple, manga ...) only differ between light and dark. A scene file that was edited
+# gets a fresh still.
+live_own() { [ -n "${OWN+x}" ] || OWN=$(mathwall --list-own 2>/dev/null); grep -qx -- "$1" <<< "$OWN"; }
+live_frame() {
+  local key out look=dark stamp
+  case "${3:-$(mode_now)}" in day|paper) look=light ;; esac
+  stamp=$(stat -L -c %Y "$HOME/.local/share/mathwall/scenes/$1.frag" 2>/dev/null)
+  if live_own "$1"; then key=$look-${stamp:-0}
+  else key=$look-$( { grep -E "^(accent|accent2|bg|crust|fg)=" "$HOME/.cache/theme/colors.sh" 2>/dev/null; echo "$stamp"; } | md5sum | cut -c1-8); fi
+  out="$CACHE/thumbs/live-$1-$2-$key.png"
+  if [ ! -s "$out" ]; then
+    mkdir -p "$CACHE/thumbs"
+    mathwall --snapshot "$out.ppm" --scene "$1" --size "$2" --mood "$look" 2>/dev/null && magick "$out.ppm" "$out"
+    rm -f "$out.ppm"
+  fi
+  echo "$out"
+}
+live_thumb() { live_frame "$1" 300x300; }
+live_still() { live_frame "$(live_scene)" "$1"; }
+# Start, stop or repaint mathwall so it matches the saved setting, scene and palette.
+live_sync() {
+  local want scene running cmd rt="${XDG_RUNTIME_DIR:-/tmp}"
+  want=$(live_now)
+  running i3 && command -v mathwall >/dev/null || return 0
+  if [ "$want" = off ]; then
+    pkill -x mathwall
+    return 0
+  fi
+  scene=$(live_scene)
+  running=$(pgrep -x mathwall | head -1)
+  if [ -n "$running" ]; then          # restart only when its flags no longer match
+    cmd=$(tr '\0' ' ' < "/proc/$running/cmdline")
+    case "$cmd" in *--always*) [ "$want" = always ] || running= ;; *) [ "$want" = on ] || running= ;; esac
+    [ -n "$running" ] || { pkill -x mathwall; sleep 0.2; }
+  fi
+  if [ -n "$running" ]; then
+    kill -USR1 "$running"                               # re-read the palette
+    if [ "$(cat "$rt/mathwall.scene" 2>/dev/null)" != "$scene" ]; then
+      echo "$scene" > "$rt/mathwall.goto"               # another scene: fade to it (USR2 reads this file)
+      kill -USR2 "$running"
+    fi
+  else
+    # in a subshell, so that the `wait` at the end of apply does not wait for the wallpaper to exit
+    ( setsid mathwall --scene "$scene" --cycle 0 $([ "$want" = always ] && echo --always) >/dev/null 2>&1 & )
+  fi
+}
+live() {
+  local sc
+  case "${1:-}" in
+    on|off|always) echo "$1" > "$STATE/live"; apply; say "live wallpaper: $1" ;;
+    toggle) if [ "$(live_now)" = off ]; then live on; else live off; fi ;;
+    next) [ "$(live_now)" = off ] && echo on > "$STATE/live"
+          mapfile -t sc < <(mathwall --list)
+          for i in "${!sc[@]}"; do [ "${sc[$i]}" = "$(live_scene)" ] && echo "${sc[$(( (i + 1) % ${#sc[@]} ))]}" > "$STATE/live-scene" && break; done
+          if running mathwall; then        # fade to it now; the colours follow once the old scene has gone dark
+            cat "$STATE/live-scene" > "${XDG_RUNTIME_DIR:-/tmp}/mathwall.goto"; nudge mathwall 12
+            ( sleep 1.7; apply ) &
+          else apply; fi ;;
+    "") echo "$(live_now) $(live_scene)" ;;
+    *) if mathwall --list 2>/dev/null | grep -qx -- "$1"; then
+         echo "$1" > "$STATE/live-scene"; [ "$(live_now)" = off ] && echo on > "$STATE/live"
+         apply; say "live wallpaper" "$1"
+       else echo "rice: live is one of: on off always toggle next $(mathwall --list 2>/dev/null | tr '\n' ' ')" >&2; return 1; fi ;;
+  esac
+}
+
 menu() {
   local cur choice tile
   cur=$(mode_now)
   tile() { printf "<span font='JetBrainsMono Nerd Font 24'>%s</span>\n%s" "$1" "$2"; }
-  choice=$(printf '%s\0' "$(tile 󰖔 night)" "$(tile 󰖨 day)" "$(tile 󰂺 paper)" "$(tile 󰸉 wallpaper)" "$(tile 󰊕 'math art')" \
-    | rofi -dmenu -sep '\0' -eh 4 -markup-rows -i -format i -theme tiles -mesg "mood: <b>$cur</b>     wallpaper: <b>$(basename "$(wall_now)")</b>")
+  choice=$(printf '%s\0' "$(tile 󰖔 night)" "$(tile 󰖨 day)" "$(tile 󰂺 paper)" "$(tile 󰸉 wallpaper)" "$(tile 󰊕 'math art')" "$(tile 󰝨 "live: $(live_now)")" \
+    | rofi -dmenu -sep '\0' -eh 4 -markup-rows -i -format i -theme tiles -theme-str 'window {width: 900px;} listview {columns: 6;}' -mesg "mood: <b>$cur</b>     wallpaper: <b>$(basename "$(wall_now)")</b>")
   case $choice in
-    0) mode night ;; 1) mode day ;; 2) mode paper ;; 3) wall_pick ;; 4) art ;;
+    0) mode night ;; 1) mode day ;; 2) mode paper ;; 3) wall_pick ;; 4) art ;; 5) live toggle ;;
   esac
 }
 
@@ -185,8 +319,9 @@ case "${1:-apply}" in
   wall)   shift; wall "$@" ;;
   mode)   shift; mode "$@" ;;
   art)    shift; art "$@" ;;
+  live)   shift; live "$@" ;;
   menu)   menu ;;
-  status) echo "mood:      $(mode_now)"; echo "wallpaper: $(wall_now) ($(wall_setting))"; evry stat 2>/dev/null | sed 's/^/files:     /' ;;
+  status) echo "mood:      $(mode_now)"; echo "wallpaper: $(wall_now) ($(wall_setting))"; echo "live:      $(live_now) ($(live_scene))"; evry stat 2>/dev/null | sed 's/^/files:     /' ;;
   help|-h|--help) sed -n '2,/^export PATH/p' "$0" | sed '$d; s/^# \{0,1\}//' ;;
   *)      echo "rice: unknown command '$1' (try: rice help)" >&2; exit 1 ;;
 esac

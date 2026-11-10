@@ -4,11 +4,16 @@
 <meta charset="utf-8">
 <title>New Tab</title>
 <link rel="stylesheet" href="newtab.css">
+<div id="bg"></div>
+<canvas id="curve"></canvas>
 <main>
-  <div id="cat" title="pet me">(=^･ω･^=)</div>
   <div id="clock"></div>
-  <div id="hello"></div>
-  <form id="search"><input id="q" placeholder="search or wander…" autocomplete="off" autofocus></form>
+  <div id="date"></div>
+  <form id="search"><input id="q" placeholder="search, or type an address" autocomplete="off" autofocus></form>
+  <nav id="links"></nav>
 </main>
+<aside id="wild" title="another one"><canvas id="sprite"></canvas><p id="wildname"></p></aside>
+<aside id="math" title="another one"><p id="formula"></p><p id="who"></p></aside>
+<script src="data.js"></script>
 <script src="newtab.js"></script>
 </html>

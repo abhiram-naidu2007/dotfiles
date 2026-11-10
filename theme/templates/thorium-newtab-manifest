@@ -2,8 +2,9 @@
 {
   "manifest_version": 3,
   "name": "Rice new tab",
-  "version": "1.0",
-  "description": "A small, fast new tab page with a cat and a clock.",
-  "permissions": ["search"],
-  "chrome_url_overrides": { "newtab": "newtab.html" }
+  "version": "2.0",
+  "description": "New tab that matches the desktop: wallpaper, clock, a wild Pokemon, a line of mathematics, bookmarks. Also themes text selection and scrollbars on every page.",
+  "permissions": ["search", "bookmarks", "favicon"],
+  "chrome_url_overrides": { "newtab": "newtab.html" },
+  "content_scripts": [{ "matches": ["<all_urls>"], "css": ["page.css"], "run_at": "document_start" }]
 }

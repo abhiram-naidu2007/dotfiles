@@ -6,7 +6,7 @@ bars = 0
 bar_width = 2
 bar_spacing = 1
 [input]
-method = pipewire
+method = pulse
 source = auto
 [output]
 method = noncurses

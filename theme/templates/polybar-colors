@@ -6,6 +6,7 @@ bg-solid = {crust}
 surface = {surface}
 surface1 = {surface1}
 surface2 = {surface2}
+tray = {tray}
 fg = {fg}
 subtext = {subtext}
 dim = {dim}

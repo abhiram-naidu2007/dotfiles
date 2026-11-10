@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Wallpapers drawn from mathematics, in the desktop's own colour system.
 
-  mathart.py KIND OUT.png [--seed N] [--mode night|day|paper] [--size WxH]
+  mathart.py KIND OUT.png [--seed N] [--mode night|day|paper] [--size WxH] [--caption]
 
   attractor     Clifford strange attractor: where 19 million iterates of a 2-D map land
   harmonograph  two damped pendulums drawing one curve
@@ -247,6 +247,7 @@ def main():
     ap.add_argument("--seed", type=int)
     ap.add_argument("--mode", choices=list(MOODS), default="night")
     ap.add_argument("--size", default="1920x1080")
+    ap.add_argument("--caption", action="store_true", help="write the parameters in the bottom right corner")
     args = ap.parse_args()
     seed = args.seed if args.seed is not None else int(np.random.SeedSequence().entropy % 100_000)
     rng = np.random.default_rng(seed)
@@ -260,8 +261,11 @@ def main():
     img, text = KINDS[kind](rng, w * over, h * over, ink)
     if over > 1:
         img = img.resize((w, h), Image.LANCZOS)
-    caption(img, f"{text}   seed {seed}", ink).save(args.out)
+    if args.caption:
+        img = caption(img, f"{text}   seed {seed}", ink)
+    img.save(args.out)
     print(f"{kind} seed {seed} -> {args.out}")
+    print(text, file=sys.stderr)          # the parameters, for whoever wants them
 
 
 if __name__ == "__main__":

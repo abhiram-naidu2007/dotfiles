@@ -2,18 +2,14 @@
   "layout": "splith",
   "percent": 1.0,
   "nodes": [
+    { "percent": 0.44, "swallows": [{ "class": "^dev.showcase.btop$" }] },
+    { "percent": 0.26, "swallows": [{ "class": "^dev.showcase.fetch$" }] },
     {
-      "layout": "splitv", "percent": 0.66,
+      "layout": "splitv", "percent": 0.30,
       "nodes": [
-        { "percent": 0.62, "swallows": [{ "class": "^dev.showcase.btop$" }] },
-        { "percent": 0.38, "swallows": [{ "class": "^dev.showcase.fetch$" }] }
-      ]
-    },
-    {
-      "layout": "splitv", "percent": 0.34,
-      "nodes": [
-        { "percent": 0.33, "swallows": [{ "class": "^dev.showcase.clock$" }] },
-        { "percent": 0.67, "swallows": [{ "class": "^dev.showcase.cal$" }] }
+        { "percent": 0.26, "swallows": [{ "class": "^dev.showcase.clock$" }] },
+        { "percent": 0.40, "swallows": [{ "class": "^dev.showcase.cal$" }] },
+        { "percent": 0.34, "swallows": [{ "class": "^dev.showcase.cava$" }] }
       ]
     }
   ]

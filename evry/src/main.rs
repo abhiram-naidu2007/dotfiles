@@ -814,7 +814,7 @@ fn cmd_query(args: &[String]) -> io::Result<()> {
                 out.write_all(&shown[cut..])?;
                 out.write_all(b"\x1b[0m\n")?;
             } else {
-                out.write_all(&shown)?;
+                out.write_all(&path)?; // piped: absolute paths, one per line
                 out.write_all(b"\n")?;
             }
         }
