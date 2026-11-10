@@ -1,0 +1,27 @@
+# target: ~/.local/share/thorium-ext/rice-newtab/newtab.js
+const clock = document.getElementById("clock");
+const hello = document.getElementById("hello");
+const cat = document.getElementById("cat");
+const FACES = ["(=^･ω･^=)", "(=^-ω-^=)", "ヽ(=^ω^=)ノ"];
+
+function tick() {
+  const now = new Date();
+  clock.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const h = now.getHours();
+  hello.textContent = h < 5 ? "still awake?" : h < 12 ? "good morning" : h < 18 ? "good afternoon" : "good evening";
+  setTimeout(tick, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()));
+}
+tick();
+
+cat.addEventListener("click", () => {
+  cat.textContent = FACES[Math.floor(Math.random() * FACES.length)] + " ♡";
+  cat.classList.remove("happy");
+  void cat.offsetWidth;
+  cat.classList.add("happy");
+});
+
+document.getElementById("search").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = document.getElementById("q").value.trim();
+  if (text) chrome.search.query({ text, disposition: "CURRENT_TAB" });
+});

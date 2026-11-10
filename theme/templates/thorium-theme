@@ -1,0 +1,27 @@
+# target: ~/.local/share/thorium-ext/rice-theme/manifest.json
+{
+  "manifest_version": 3,
+  "name": "Rice theme",
+  "version": "1.0",
+  "description": "Thorium colors generated from the current wallpaper.",
+  "theme": {
+    "colors": {
+      "frame": [{crust_rgb}],
+      "frame_inactive": [{mantle_rgb}],
+      "frame_incognito": [{mantle_rgb}],
+      "toolbar": [{surface_rgb}],
+      "tab_text": [{fg_rgb}],
+      "tab_background_text": [{subtext_rgb}],
+      "tab_background_text_inactive": [{dim_rgb}],
+      "bookmark_text": [{fg_rgb}],
+      "toolbar_text": [{fg_rgb}],
+      "toolbar_button_icon": [{accent_rgb}],
+      "omnibox_background": [{mantle_rgb}],
+      "omnibox_text": [{fg_rgb}],
+      "ntp_background": [{bg_rgb}],
+      "ntp_text": [{fg_rgb}],
+      "ntp_link": [{accent_rgb}],
+      "ntp_header": [{surface_rgb}]
+    }
+  }
+}

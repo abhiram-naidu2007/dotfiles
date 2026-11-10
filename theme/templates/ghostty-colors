@@ -7,7 +7,7 @@ cursor-text = {crust}
 selection-background = {surface1}
 selection-foreground = {fg}
 split-divider-color = {surface1}
-palette = 0={surface1}
+palette = 0={ansi0}
 palette = 1={red}
 palette = 2={green}
 palette = 3={yellow}
@@ -15,7 +15,7 @@ palette = 4={blue}
 palette = 5={magenta}
 palette = 6={cyan}
 palette = 7={subtext}
-palette = 8={surface2}
+palette = 8={ansi8}
 palette = 9={brred}
 palette = 10={brgreen}
 palette = 11={bryellow}

@@ -1,0 +1,67 @@
+#!/bin/bash
+# rice-greet [COLUMNS]: a wild Pokémon appears beside a line of mathematics.
+#   rice-greet --path   only print the path of a random sprite (used by `pokefetch`)
+# Sprites: ~/.local/share/pokemon-colorscripts (install.sh extras). Without them
+# the greeting is the line of mathematics alone. Runs in a few milliseconds:
+# the sprite sizes are indexed once, and nothing is forked on the way.
+SPRITES="$HOME/.local/share/pokemon-colorscripts/colorscripts/small"
+INDEX="${XDG_CACHE_HOME:-$HOME/.cache}/rice/pokemon.idx"
+MATH="$HOME/.local/share/rice/math.txt"
+
+if [ -d "$SPRITES/regular" ] && [ ! -s "$INDEX" ]; then   # name <tab> rows <tab> columns
+  mkdir -p "${INDEX%/*}"
+  python3 -I - "$SPRITES/regular" > "$INDEX.tmp" <<'PY' && mv "$INDEX.tmp" "$INDEX"
+import re, sys
+from pathlib import Path
+for f in sorted(Path(sys.argv[1]).iterdir()):
+    lines = [re.sub(r"\x1b\[[0-9;]*m", "", l) for l in f.read_text().splitlines()]
+    print(f.name, len(lines), max(map(len, lines), default=0), sep="\t")
+PY
+fi
+
+name= rows=0 cols=0 form=regular
+if [ -s "$INDEX" ]; then
+  mapfile -t all < "$INDEX"
+  IFS=$'\t' read -r name rows cols <<< "${all[RANDOM % ${#all[@]}]}"
+  (( RANDOM % 128 == 0 )) && [ -r "$SPRITES/shiny/$name" ] && form=shiny   # rarer than in the games, but it happens
+fi
+if [ "$1" = --path ]; then
+  [ -n "$name" ] && echo "$SPRITES/$form/$name"
+  exit
+fi
+
+formula= who=
+if [ -r "$MATH" ]; then
+  mapfile -t lines < "$MATH"
+  IFS=$'\t' read -r formula who <<< "${lines[RANDOM % ${#lines[@]}]}"
+fi
+printf -v hour '%(%-H)T' -1
+if   (( hour >= 5 && hour < 12 )); then hello='good morning! (=^･ω･^=)ﾉ'
+elif (( hour >= 12 && hour < 18 )); then hello='good afternoon (=^-ω-^=)'
+elif (( hour >= 18 && hour < 23 )); then hello='good evening ヽ(=^ω^=)ノ'
+else hello='go to sleep soon (=-ω-=) zZ'; fi
+
+B=$'\e[1m' D=$'\e[2m' I=$'\e[3m' R=$'\e[0m' ACC=$'\e[34m' YEL=$'\e[33m' MAG=$'\e[35m'
+text=()
+if [ -n "$name" ]; then
+  pretty=${name//-/ }; pretty=${pretty^}
+  if [ $form = shiny ]; then text+=("${B}${MAG}✨ a shiny ${pretty} appeared! ✨${R}"); else text+=("${D}a wild${R} ${B}${ACC}${pretty}${R} ${D}appeared!${R}"); fi
+  text+=("")
+fi
+[ -n "$formula" ] && text+=("${B}${formula}${R}" "${D}${I}${who}${R}" "")
+text+=("${YEL}${hello}${R}")
+
+width=${1:-80}
+if [ -z "$name" ] || (( cols + 46 > width )); then    # no sprite, or a narrow window: text only
+  printf '  %s\n' "${text[@]}"
+  exit
+fi
+# Print the sprite, climb back up, and write the text to its right.
+printf '%s\n' "$(<"$SPRITES/$form/$name")"
+top=$(( (rows - ${#text[@]}) / 2 )); (( top < 0 )) && top=0
+printf '\e[%dA' "$rows"
+for (( i = 0; i < rows || i - top < ${#text[@]}; i++ )); do
+  k=$(( i - top ))
+  (( k >= 0 && k < ${#text[@]} )) && printf '\e[%dG%s' $(( cols + 5 )) "${text[$k]}"
+  printf '\n'
+done

@@ -1,0 +1,14 @@
+# target: ~/.local/share/thorium-ext/rice-newtab/newtab.html
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>New Tab</title>
+<link rel="stylesheet" href="newtab.css">
+<main>
+  <div id="cat" title="pet me">(=^･ω･^=)</div>
+  <div id="clock"></div>
+  <div id="hello"></div>
+  <form id="search"><input id="q" placeholder="search or wander…" autocomplete="off" autofocus></form>
+</main>
+<script src="newtab.js"></script>
+</html>

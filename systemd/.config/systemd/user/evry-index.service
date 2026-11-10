@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh the evry file index (launcher file search)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/evry index
+# never in the way: lowest CPU and disk priority
+Nice=19
+IOSchedulingClass=idle

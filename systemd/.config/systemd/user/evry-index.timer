@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh the evry file index every 20 minutes
+
+[Timer]
+OnStartupSec=1min
+OnUnitActiveSec=20min
+
+[Install]
+WantedBy=timers.target

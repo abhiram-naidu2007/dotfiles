@@ -5,9 +5,14 @@ the hue of the dark tones (tints the neutral base) and the hue of the most
 colourful tones (accent, accent2). Lightness and chroma are fixed in OKLCH, so
 every wallpaper gives a calm, readable, evenly-weighted theme. Semantic and
 ANSI colours use fixed hues at the same pastel weight.
+Three moods share the same hues and differ only in lightness and chroma:
+  night  near-black base, pastel accents (the default)
+  day    near-white base, deeper accents
+  paper  warm cream and ink for reading; hues are fixed, the wallpaper is ignored
 Every template in templates/ is rendered to the path on its first line:
   # target: ~/.config/x
-Usage: apply.py WALLPAPER   |   apply.py --check WALLPAPER (print palette only)
+Usage: apply.py [--mode night|day|paper] WALLPAPER
+       apply.py --check ...   print the palette only
 """
 import json, math, os, subprocess, sys
 from pathlib import Path
@@ -66,9 +71,10 @@ def contrast(a, b):
 
 
 def readable(L, C, H, bg, ratio):
-    """Raise OKLCH lightness until contrast with bg >= ratio."""
-    while contrast(oklch(L, C, H), bg) < ratio and L < 0.98:
-        L += 0.01
+    """Move OKLCH lightness away from bg (up on dark, down on light) until contrast >= ratio."""
+    step = 0.01 if lum(bg) < 0.4 else -0.01
+    while contrast(oklch(L, C, H), bg) < ratio and 0.06 < L < 0.98:
+        L += step
     return oklch(L, C, H)
 
 
@@ -76,17 +82,35 @@ def hue_dist(a, b): return min(abs(a - b), 360 - abs(a - b))
 
 
 # --- palette ----------------------------------------------------------------
-def palette(wallpaper):
+# Per mood: lightness of the six base layers (crust, mantle, bg, surface,
+# surface1, surface2), their tint chroma, then (lightness, chroma, minimum
+# contrast) for each text and accent role. crust is always the layer furthest
+# from the text: darkest at night, brightest by day, so "crust on accent" reads
+# in every mood.
+MOODS = {
+    "night": dict(layers=(0.145, 0.165, 0.190, 0.245, 0.310, 0.390), tint=0.018,
+                  fg=(0.91, 0.012, 11), subtext=(0.80, 0.015, 7), dim=(0.62, 0.020, 4.5),
+                  accent=(0.80, 0.115, 7), accent2=(0.78, 0.100, 6),
+                  ansi=(0.78, 0.110, 6), bright=(0.85, 0.095, 8)),
+    "day":   dict(layers=(0.985, 0.970, 0.950, 0.912, 0.868, 0.800), tint=0.012,
+                  fg=(0.27, 0.022, 11), subtext=(0.41, 0.024, 7), dim=(0.56, 0.024, 4),
+                  accent=(0.56, 0.140, 4.6), accent2=(0.58, 0.130, 4.3),
+                  ansi=(0.58, 0.130, 4.3), bright=(0.50, 0.140, 5.5)),
+    "paper": dict(layers=(0.968, 0.950, 0.930, 0.892, 0.848, 0.780), tint=0.030,
+                  fg=(0.27, 0.020, 11), subtext=(0.40, 0.025, 7), dim=(0.55, 0.030, 4),
+                  accent=(0.44, 0.070, 6), accent2=(0.48, 0.095, 5),
+                  ansi=(0.50, 0.080, 4.5), bright=(0.42, 0.090, 6)),
+}
+PAPER_HUES = (85, 255, 35)   # cream paper, blue-black ink, sepia
+
+
+def wallpaper_hues(wallpaper):
+    """(hue of the shadows, accent hue, second accent hue) from pywal's palette."""
     subprocess.run(["wal", "-i", wallpaper, "-n", "-s", "-t", "-e", "-q"], check=True)
     d = json.loads(WAL_JSON.read_text())
     tones = [to_oklch(rgb(d["colors"][f"color{i}"])) for i in range(1, 7)]
     dark = [to_oklch(rgb(d["special"]["background"])), to_oklch(rgb(d["colors"]["color8"]))]
-
-    # Base hue: the wallpaper's shadows, but only as a faint tint.
     base_h = max(dark, key=lambda t: t[1])[2]
-    tint = 0.018
-    base = lambda L, C=tint: oklch(L, C, base_h)
-
     # Accents: most colourful wallpaper tone, then the most colourful one with
     # a clearly different hue (or a split-complement when there is none).
     # Olive (yellow-green) turns muddy as a pastel UI colour: rank it lower.
@@ -94,36 +118,64 @@ def palette(wallpaper):
     tones.sort(key=score, reverse=True)
     acc_h = tones[0][2]
     far = [t for t in tones if hue_dist(t[2], acc_h) > 70 and t[1] > 0.04]
-    acc2_h = far[0][2] if far else (acc_h + 150) % 360
+    return base_h, acc_h, far[0][2] if far else (acc_h + 150) % 360
 
-    p = {
-        "crust":    base(0.145),
-        "mantle":   base(0.165),
-        "bg":       base(0.190),
-        "surface":  base(0.245, tint * 1.3),
-        "surface1": base(0.310, tint * 1.3),
-        "surface2": base(0.390, tint * 1.2),
-    }
+
+def palette(wallpaper, mode="night"):
+    m = MOODS[mode]
+    base_h, acc_h, acc2_h = PAPER_HUES if mode == "paper" else wallpaper_hues(wallpaper)
+    dark = mode == "night"
+    tint = m["tint"]
+    names = ("crust", "mantle", "bg", "surface", "surface1", "surface2")
+    # the raised layers carry a little more of the hue than the background
+    p = {n: oklch(L, tint * (1 if i < 3 else 1.3), base_h) for i, (n, L) in enumerate(zip(names, m["layers"]))}
     bg = p["bg"]
-    p["fg"] = readable(0.91, 0.012, base_h, bg, 11)
-    p["subtext"] = readable(0.80, 0.015, base_h, bg, 7)
-    p["dim"] = readable(0.62, 0.020, base_h, p["surface"], 4.5)
-    p["accent"] = readable(0.80, 0.115, acc_h, bg, 7)
-    p["accent2"] = readable(0.78, 0.100, acc2_h, bg, 6)
+    role = lambda key, hue, against=bg: readable(m[key][0], m[key][1], hue, against, m[key][2])
+    p["fg"] = role("fg", base_h)
+    p["subtext"] = role("subtext", base_h)
+    p["dim"] = role("dim", base_h, p["surface"])
+    p["accent"] = role("accent", acc_h)
+    p["accent2"] = role("accent2", acc2_h)
 
-    # Semantic + ANSI hues (OKLCH): fixed, same pastel weight as the accents.
+    # Semantic + ANSI hues (OKLCH): fixed, same weight as the accents.
     hues = {"red": 18, "green": 145, "yellow": 88, "blue": 255, "magenta": 320, "cyan": 200}
     for name, h in hues.items():
-        c = 0.085 if name == "cyan" else 0.110   # cyan reads louder at equal chroma
-        p[name] = readable(0.78, c, h, bg, 6)
-        p["br" + name] = readable(0.85, 0.095, h, bg, 8)
+        L, C, ratio = m["ansi"]
+        if name == "cyan":
+            C *= 0.77            # cyan reads louder at equal chroma
+        if name == "yellow" and not dark:
+            h = 70               # yellow has no dark form; amber keeps it readable on paper
+        p[name] = readable(L, C, h, bg, ratio)
+        p["br" + name] = role("bright", h)
     p["ok"], p["warn"], p["crit"] = p["green"], p["yellow"], p["red"]
+    # ANSI 0 / 8: the terminal's "black". By day they are the light greys, so
+    # programs that paint bars with them still get dark text on a pale bar.
+    p["ansi0"] = p["surface1"]
+    p["ansi8"] = p["surface2"] if dark else p["dim"]
+
+    # faint washes of the diff colours over the background
+    mix = lambda a, b, t: tuple(x + (y - x) * t for x, y in zip(a, b))
+    p["diff_add"], p["diff_del"], p["diff_chg"] = (mix(bg, p[k], 0.20) for k in ("green", "red", "yellow"))
 
     out = {k: hexc(v) for k, v in p.items()}
-    for k in ("bg", "crust", "mantle"):
-        out[k + "_hex"] = out[k].lstrip("#")  # for #AARRGGBB use: #cc{bg_hex}
+    for k, v in list(out.items()):
+        out[k + "_hex"] = v.lstrip("#")                                                 # for #AARRGGBB: #cc{bg_hex}
+        out[k + "_rgb"] = ", ".join(str(int(v[i:i+2], 16)) for i in (1, 3, 5))          # for JSON colour arrays
+    out.update(
+        mode=mode,
+        variant="dark" if dark else "light",
+        prefer_dark="1" if dark else "0",
+        gtk_theme="Adwaita-dark" if dark else "Adwaita",
+        icon_theme="Papirus-Dark" if dark else "Papirus-Light",
+        shadow_opacity="0.42" if dark else "0.20",
+        dim_inactive="0.16" if dark else "0.07",
+        glass="d8" if dark else "e6",           # alpha of the launcher panel over the blurred wallpaper
+        # paper also runs every window through an e-ink shader (picom/shaders/paper.glsl)
+        picom_shader=str(Path.home() / ".config/picom/shaders/paper.glsl") if mode == "paper" else "",
+    )
     out["_ratio_fg_bg"] = round(contrast(p["fg"], bg), 1)
     out["_ratio_accent_bg"] = round(contrast(p["accent"], bg), 1)
+    out["_ratio_crust_accent"] = round(contrast(p["crust"], p["accent"]), 1)
     return out
 
 
@@ -139,6 +191,8 @@ def render(p):
         for k in keys:
             body = body.replace("{" + k + "}", str(p[k]))
         target.parent.mkdir(parents=True, exist_ok=True)
+        if target.is_symlink():      # never write through a stow link into the repo
+            target.unlink()
         target.write_text(body)
         print("wrote", target)
 
@@ -146,12 +200,19 @@ def render(p):
 if __name__ == "__main__":
     args = sys.argv[1:]
     check = "--check" in args
+    mode = "night"
+    if "--mode" in args:
+        mode = args[args.index("--mode") + 1]
+        del args[args.index("--mode"):args.index("--mode") + 2]
     wp = [a for a in args if not a.startswith("--")]
-    if not wp:
+    if not wp or mode not in MOODS:
         sys.exit(__doc__)
-    pal = palette(os.path.expanduser(wp[0]))
-    print(json.dumps(pal, indent=1))
+    pal = palette(os.path.expanduser(wp[0]), mode)
+    print(json.dumps({k: v for k, v in pal.items() if not k.endswith(("_hex", "_rgb"))}, indent=1))
     if not check:
-        Path.home().joinpath(".cache/theme").mkdir(parents=True, exist_ok=True)
-        (Path.home() / ".cache/theme/palette.json").write_text(json.dumps(pal))
+        cache = Path.home() / ".cache/theme"
+        cache.mkdir(parents=True, exist_ok=True)
+        (cache / "palette.json").write_text(json.dumps(pal))
+        # the same palette for shell scripts: . ~/.cache/theme/colors.sh; echo $accent
+        (cache / "colors.sh").write_text("".join(f"{k.lstrip('_')}='{v}'\n" for k, v in pal.items()))
         render(pal)

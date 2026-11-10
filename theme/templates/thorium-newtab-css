@@ -1,0 +1,16 @@
+# target: ~/.local/share/thorium-ext/rice-newtab/newtab.css
+html, body { height: 100%; margin: 0; }
+body { display: grid; place-items: center; color: {fg}; font-family: Inter, sans-serif;
+  background: radial-gradient(circle at 50% 30%, {surface} 0%, {bg} 55%, {crust} 100%); }
+main { text-align: center; }
+#cat { font: 56px "Noto Sans CJK JP", sans-serif; color: {accent}; cursor: pointer; user-select: none;
+  animation: bob 2.4s ease-in-out infinite; }
+#cat.happy { color: {magenta}; animation: hop .35s ease-in-out 3; }
+#clock { font: 700 88px "JetBrainsMono Nerd Font", monospace; margin-top: 18px; color: {fg}; }
+#hello { font-size: 18px; color: {accent2}; margin: 6px 0 28px; }
+#q { width: min(560px, 80vw); box-sizing: border-box; padding: 14px 24px; font: 16px Inter, sans-serif; color: {fg};
+  background: {surface}; border: 2px solid {surface1}; border-radius: 999px; outline: none; transition: border-color .15s, transform .15s; }
+#q:focus { border-color: {accent}; transform: scale(1.02); }
+#q::placeholder { color: {dim}; }
+@keyframes bob { 50% { transform: translateY(-8px); } }
+@keyframes hop { 50% { transform: translateY(-26px) scale(1.08); } }

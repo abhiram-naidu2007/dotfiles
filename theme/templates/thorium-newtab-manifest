@@ -1,0 +1,9 @@
+# target: ~/.local/share/thorium-ext/rice-newtab/manifest.json
+{
+  "manifest_version": 3,
+  "name": "Rice new tab",
+  "version": "1.0",
+  "description": "A small, fast new tab page with a cat and a clock.",
+  "permissions": ["search"],
+  "chrome_url_overrides": { "newtab": "newtab.html" }
+}

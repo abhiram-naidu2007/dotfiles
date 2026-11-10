@@ -1,0 +1,54 @@
+e^(iπ) + 1 = 0	Euler's identity
+ζ(2) = 1 + 1/4 + 1/9 + … = π²/6	the Basel problem
+∫ e^(−x²) dx = √π	the Gaussian integral
+∮ f(z) dz = 2πi Σ Res f	the residue theorem
+∫_∂Ω ω = ∫_Ω dω	Stokes' theorem
+V − E + F = 2	Euler's polyhedron formula
+∬ K dA + ∮ k ds = 2π χ(M)	Gauss–Bonnet
+a² + b² = c²	Pythagoras
+φ² = φ + 1	the golden ratio
+1729 = 1³ + 12³ = 9³ + 10³	the Hardy–Ramanujan number
+π/4 = 1 − 1/3 + 1/5 − 1/7 + …	Leibniz
+e = Σ 1/n!	Euler's number
+Γ(1/2) = √π	the gamma function
+n! ≈ √(2πn) (n/e)ⁿ	Stirling
+Σ 1/p = ∞	Euler, on the primes
+π(x) ~ x / ln x	the prime number theorem
+aᵖ⁻¹ ≡ 1 (mod p)	Fermat's little theorem
+xⁿ + yⁿ ≠ zⁿ for n > 2	Fermat, then Wiles
+e^(ix) = cos x + i sin x	Euler's formula
+f(a) = (1/2πi) ∮ f(z)/(z − a) dz	Cauchy's integral formula
+det(AB) = det A · det B	determinants multiply
+det(e^A) = e^(tr A)	Jacobi
+dim V = rank T + nullity T	rank–nullity
+⟨u, v⟩² ≤ ⟨u, u⟩⟨v, v⟩	Cauchy–Schwarz
+∇·E = ρ/ε₀	Gauss's law
+∇×E = −∂B/∂t	Faraday
+iħ ∂ψ/∂t = Ĥψ	Schrödinger
+G_μν + Λg_μν = (8πG/c⁴) T_μν	Einstein
+δS = 0	the principle of least action
+S = k ln W	Boltzmann
+Δx Δp ≥ ħ/2	Heisenberg
+2^ℵ₀ > ℵ₀	Cantor
+f̂(ξ) = ∫ f(x) e^(−2πixξ) dx	the Fourier transform
+‖f‖ = ‖f̂‖	Plancherel
+z ↦ z² + c	Mandelbrot
+xₙ₊₁ = r xₙ (1 − xₙ)	the logistic map
+P(A|B) = P(B|A) P(A) / P(B)	Bayes
+H = −Σ p log p	Shannon entropy
+(1 + 1/n)ⁿ → e	a limit worth knowing
+1 + 2 + … + n = n(n+1)/2	young Gauss
+1³ + 2³ + … + n³ = (1 + 2 + … + n)²	Nicomachus
+sin²θ + cos²θ = 1	the unit circle
+1 + 2 + 4 + … + 2ⁿ = 2ⁿ⁺¹ − 1	a geometric series
+0.999… = 1	exactly
+√2 ∉ ℚ	Hippasus
+|G| = |H| · [G : H]	Lagrange
+π₁(S¹) ≅ ℤ	the circle winds
+d/dx ∫ₐˣ f(t) dt = f(x)	the fundamental theorem of calculus
+∇²φ = 0	Laplace
+∂u/∂t = α ∇²u	the heat equation
+x = (−b ± √(b² − 4ac)) / 2a	the quadratic formula
+four colours suffice	Appel and Haken
+P ≟ NP	open
+every even n > 2 is p + q ?	Goldbach, open

@@ -29,6 +29,6 @@ format = "[took $duration]($style) "
 style = "{dim}"
 min_time = 2000
 [character]
-success_symbol = "[❯]({accent})"
-error_symbol = "[❯]({crit})"
+success_symbol = "[\\(=^･ω･^=\\)]({accent}) [❯]({accent2})"
+error_symbol = "[\\(=；ω；=\\)]({crit}) [❯]({crit})"
 vimcmd_symbol = "[❮]({accent2})"

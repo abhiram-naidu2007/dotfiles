@@ -3,17 +3,17 @@
 [global]
     frame_color = "{surface1}"
     separator_color = "frame"
-    highlight = "{accent}"
+    highlight = "{accent}, {accent2}"
 [urgency_low]
     background = "#{mantle_hex}f2"
     foreground = "{subtext}"
     frame_color = "{surface}"
-    highlight = "{accent}"
+    highlight = "{accent}, {accent2}"
 [urgency_normal]
     background = "#{mantle_hex}f2"
     foreground = "{fg}"
     frame_color = "{surface1}"
-    highlight = "{accent}"
+    highlight = "{accent}, {accent2}"
 [urgency_critical]
     background = "#{mantle_hex}f2"
     foreground = "{fg}"

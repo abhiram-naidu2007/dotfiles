@@ -1,0 +1,192 @@
+#!/bin/bash
+# rice: one command for how the desktop looks.
+#
+#   rice                     re-apply the current wallpaper and mood (login, 06:00/18:00 timer)
+#   rice wall PATH           use this picture; the palette is read from it
+#   rice wall auto           day picture 06-18, night picture otherwise (the default)
+#   rice wall next|prev|random
+#   rice wall pick           choose from a thumbnail grid
+#   rice mode night|day|paper|next
+#   rice art [KIND] [SEED]   draw a new mathematical wallpaper and use it
+#                            (attractor harmonograph julia sacks rose; default: random)
+#   rice menu                the same choices as a rofi menu
+#   rice status | help
+#
+# night  dark base, pastel accents          day    light base, deeper accents
+# paper  cream and ink for reading: fixed palette, wallpaper printed in ink,
+#        every window drawn through an e-ink shader
+#
+# Pictures: ~/dotfiles/wallpaper and ~/Pictures/wallpapers (any depth).
+# State:    ~/.local/state/rice/{wallpaper,mode}
+export PATH="$HOME/.local/bin:$PATH"
+DOT="$HOME/dotfiles"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/rice"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/rice"
+WALLS=("$DOT/wallpaper" "$HOME/Pictures/wallpapers")
+MODES=(night day paper)
+mkdir -p "$STATE" "$CACHE"
+
+say() { notify-send -t 2500 -i preferences-desktop-wallpaper "$@" 2>/dev/null; }
+
+mode_now() { local m; m=$(cat "$STATE/mode" 2>/dev/null); case $m in night|day|paper) echo "$m" ;; *) echo night ;; esac; }
+wall_setting() { local w; w=$(cat "$STATE/wallpaper" 2>/dev/null); [ -n "$w" ] && [ -r "$w" ] && echo "$w" || echo auto; }
+wall_now() {
+  local w h; w=$(wall_setting)
+  if [ "$w" = auto ]; then
+    h=$(date +%-H)
+    if [ "$h" -ge 6 ] && [ "$h" -lt 18 ]; then w="$DOT/wallpaper/morning.jpg"; else w="$DOT/wallpaper/night.jpg"; fi
+  fi
+  echo "$w"
+}
+wall_list() { find -L "${WALLS[@]}" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort; }
+
+# Signal every process called NAME, but only where it installed a handler:
+# an unhandled SIGUSR1/2 would kill it.
+nudge() {   # NAME SIGNAL-NUMBER
+  local pid caught
+  for pid in $(pgrep -x "$1"); do
+    caught=$(awk '/^SigCgt/ {print $2}' "/proc/$pid/status" 2>/dev/null)
+    [ -n "$caught" ] && (( (0x$caught >> ($2 - 1)) & 1 )) && kill -"$2" "$pid"
+  done
+}
+
+# The wallpaper as it would look printed: grey levels mapped from ink to paper.
+paper_wall() {
+  local src=$1 out
+  out="$CACHE/paper-$(printf '%s' "$src$(stat -c %Y "$src")" | md5sum | cut -c1-12).png"
+  if [ ! -s "$out" ]; then
+    . "$HOME/.cache/theme/colors.sh"
+    magick "$src" -resize 1920x1080^ -gravity center -extent 1920x1080 -colorspace Gray \
+      -sigmoidal-contrast 3x55% +level-colors "$fg","$bg" "$out.tmp.png" && mv "$out.tmp.png" "$out"
+  fi
+  echo "$out"
+}
+
+apply() {
+  local wall mode shown before after picom_before
+  wall=$(wall_now); mode=$(mode_now)
+  [ -r "$wall" ] || { echo "rice: no such wallpaper: $wall" >&2; return 1; }
+  before=$(md5sum "$HOME/.config/i3/colors.conf" 2>/dev/null)
+  picom_before=$(grep -E '^(shadow_opacity|picom_shader)=' "$HOME/.cache/theme/colors.sh" 2>/dev/null)
+  python3 -I "$DOT/theme/apply.py" --mode "$mode" "$wall" >/dev/null || { echo "rice: theme/apply.py failed" >&2; return 1; }
+  after=$(md5sum "$HOME/.config/i3/colors.conf" 2>/dev/null)
+
+  shown=$wall
+  [ "$mode" = paper ] && shown=$(paper_wall "$wall")
+  if pgrep -x i3 >/dev/null; then
+    feh --no-fehbg --bg-fill "$shown"
+  else   # XFCE session
+    for p in $(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep '/last-image$'); do
+      xfconf-query -c xfce4-desktop -p "$p" -s "$shown"
+    done
+  fi
+  # launcher side panel: a tall slice from the middle of the picture
+  magick "$shown" -resize x828^ -gravity center -extent 450x828 "$CACHE/art.tmp.png" && mv "$CACHE/art.tmp.png" "$CACHE/art.png"
+
+  if pgrep -x i3 >/dev/null; then
+    nudge polybar 10                                    # SIGUSR1: restart with the new colours
+    dunstctl reload 2>/dev/null
+    [ "$before" != "$after" ] && i3-msg -q reload
+    # shadow strength and the e-ink shader belong to the mood: restart picom only when they changed
+    [ "$picom_before" != "$(grep -E '^(shadow_opacity|picom_shader)=' "$HOME/.cache/theme/colors.sh")" ] \
+      && "$HOME/.config/i3/scripts/compositor.sh"
+  fi
+  nudge ghostty 12                                      # SIGUSR2: reload config
+  nudge nvim 10                                         # SIGUSR1: Signal autocmd re-runs the colorscheme
+  nudge cava 12                                         # SIGUSR2: reload colours
+  pkill -HUP -x xsettingsd 2>/dev/null                  # running GTK apps follow
+  # open fish shells re-read their colours (a universal variable reaches every session)
+  command -v fish >/dev/null && fish -c 'set -U __rice_stamp (date +%s%N)' 2>/dev/null &
+  for pid in $(pgrep -x zathura); do
+    dbus-send --type=method_call --dest="org.pwmt.zathura.PID-$pid" /org/pwmt/zathura \
+      org.pwmt.zathura.ExecuteCommand string:"source" 2>/dev/null &
+  done
+  # the lock picture is rendered ahead of time, so locking (and suspend) stays instant
+  [ -s "$HOME/.cache/theme/lock.png" ] || "$DOT/lockscreen/generate-lockscreen.sh"
+  wait
+}
+
+wall() {
+  local list i n cur
+  case "${1:-}" in
+    "" ) wall_now; return ;;
+    auto) echo auto > "$STATE/wallpaper" ;;
+    pick) wall_pick; return ;;
+    next|prev|random)
+      mapfile -t list < <(wall_list); n=${#list[@]}
+      [ "$n" -gt 0 ] || { echo "rice: no pictures in ${WALLS[*]}" >&2; return 1; }
+      cur=$(wall_now); i=0
+      for k in "${!list[@]}"; do [ "${list[$k]}" = "$cur" ] && i=$k; done
+      case $1 in next) i=$(( (i + 1) % n )) ;; prev) i=$(( (i - 1 + n) % n )) ;; random) i=$(( RANDOM % n )) ;; esac
+      echo "${list[$i]}" > "$STATE/wallpaper" ;;
+    *) [ -r "$1" ] || { echo "rice: cannot read $1" >&2; return 1; }
+       realpath "$1" > "$STATE/wallpaper" ;;
+  esac
+  apply
+}
+
+# Thumbnail grid. Thumbnails are made once and kept in the cache.
+wall_pick() {
+  local list thumbs=() f t i choice
+  mapfile -t list < <(wall_list)
+  mkdir -p "$CACHE/thumbs"
+  for f in "${list[@]}"; do
+    thumbs+=("$CACHE/thumbs/$(printf '%s' "$f$(stat -c %Y "$f")" | md5sum | cut -c1-16).png")
+  done
+  for i in "${!list[@]}"; do    # make the missing ones, six at a time
+    [ -s "${thumbs[$i]}" ] || printf '%s\0%s\0' "${list[$i]}" "${thumbs[$i]}"
+  done | xargs -0 -r -n 2 -P 6 sh -c 'magick "$0" -resize 300x300^ -gravity center -extent 300x300 "$1"'
+  choice=$( { printf 'day / night\0icon\x1fweather-clear-night\n'
+              for i in "${!list[@]}"; do
+                f=${list[$i]##*/}; printf '%s\0icon\x1f%s\n' "${f%.*}" "${thumbs[$i]}"
+              done; } | rofi -dmenu -i -format i -p "󰸉" -theme grid -mesg "wallpaper: colours are read from the picture" )
+  [ -n "$choice" ] || return 0
+  if [ "$choice" = 0 ]; then wall auto; else wall "${list[$((choice - 1))]}"; fi
+}
+
+mode() {
+  local m=${1:-} cur i
+  if [ "$m" = next ]; then
+    cur=$(mode_now)
+    for i in "${!MODES[@]}"; do [ "${MODES[$i]}" = "$cur" ] && m=${MODES[$(( (i + 1) % ${#MODES[@]} ))]}; done
+  fi
+  case $m in
+    night|day|paper) echo "$m" > "$STATE/mode"; apply && say "mood: $m" ;;
+    "") mode_now ;;
+    *) echo "rice: mode is one of: ${MODES[*]} next" >&2; return 1 ;;
+  esac
+}
+
+art() {
+  local kind=${1:-random} seed=${2:-} dir="$HOME/Pictures/wallpapers/mathart" out line
+  mkdir -p "$dir"
+  say "drawing…" "$kind"
+  out="$dir/new-$$.png"
+  line=$(python3 "$DOT/art/mathart.py" "$kind" "$out" --mode "$(mode_now)" ${seed:+--seed "$seed"}) || { say "math art failed"; return 1; }
+  # "attractor seed 123 -> file": name the file after what it is
+  set -- $line
+  mv "$out" "$dir/$1-$3.png"
+  wall "$dir/$1-$3.png" && say "$1" "seed $3"
+}
+
+menu() {
+  local cur choice tile
+  cur=$(mode_now)
+  tile() { printf "<span font='JetBrainsMono Nerd Font 24'>%s</span>\n%s" "$1" "$2"; }
+  choice=$(printf '%s\0' "$(tile 󰖔 night)" "$(tile 󰖨 day)" "$(tile 󰂺 paper)" "$(tile 󰸉 wallpaper)" "$(tile 󰊕 'math art')" \
+    | rofi -dmenu -sep '\0' -eh 4 -markup-rows -i -format i -theme tiles -mesg "mood: <b>$cur</b>     wallpaper: <b>$(basename "$(wall_now)")</b>")
+  case $choice in
+    0) mode night ;; 1) mode day ;; 2) mode paper ;; 3) wall_pick ;; 4) art ;;
+  esac
+}
+
+case "${1:-apply}" in
+  apply)  apply ;;
+  wall)   shift; wall "$@" ;;
+  mode)   shift; mode "$@" ;;
+  art)    shift; art "$@" ;;
+  menu)   menu ;;
+  status) echo "mood:      $(mode_now)"; echo "wallpaper: $(wall_now) ($(wall_setting))"; evry stat 2>/dev/null | sed 's/^/files:     /' ;;
+  help|-h|--help) sed -n '2,/^export PATH/p' "$0" | sed '$d; s/^# \{0,1\}//' ;;
+  *)      echo "rice: unknown command '$1' (try: rice help)" >&2; exit 1 ;;
+esac
