@@ -1,0 +1,6 @@
+#!/bin/sh
+# rofi, started only once every mouse button is up (see evry/rofi/mouseup.c for why).
+# This file is ahead of /usr/bin/rofi in PATH, so it covers every menu: the launcher, the
+# wallpaper picker, the mood, power and capture menus, and the ones the bar opens.
+[ -n "$DISPLAY" ] && [ -x "$HOME/.local/lib/rofi/mouseup" ] && "$HOME/.local/lib/rofi/mouseup"
+exec /usr/bin/rofi "$@"
