@@ -63,14 +63,12 @@ There are two kinds, and `rice pick` (Super+Ctrl+W) shows both in one grid (clic
 
 | Live scene | What |
 |---|---|
-| train | the sea railway at dusk (Spirited Away): clouds drift, the water ripples, the windows glow; the painting is otherwise left as painted |
-| castle | the moving castle on the moor (Howl): storm clouds roll, steam rises from the stacks, the castle heaves, the grass bends |
 | temple | a temple town across its tank, drawn in code: a seven-storey gopuram with barrel roof and pot finials, palms, hills, all mirrored in the water; dusk with oil lamps, or dawn with mist and birds |
 | aizawa, lorenz, thomas, halvorsen, dadras | one orbit of a chaotic system as a 240 000-vertex line, slowly turning, pulses running along it |
 | harmonograph, phyllotaxis | a pendulum figure that keeps retuning itself; a sunflower spiral breathing around the golden angle |
 | chladni | sand figures of a vibrating plate whose modes drift |
 
-`train` and `castle` are made from stills that Studio Ghibli publishes for personal use. They are not in this repository: `rice ghibli` fetches them (list in `rice/.local/share/rice/ghibli.txt`) and the two scenes only appear once they are there. A scene file says which picture it is made of on its first line (`// picture ghibli/NAME.jpg`); `_common.glsl` documents what a scene can use, and a new `.frag` file is a new live wallpaper. Cost at 1080p (`mathwall --bench 60 --scene NAME`): 1 to 3 ms of GPU time per frame for the mathematical ones, 3.5 to 4.5 ms for temple, train and castle, at 30 to 60 frames a second.
+A scene is one `.frag` file (`_common.glsl` documents what it can use); a new file there is a new live wallpaper. Cost at 1080p (`mathwall --bench 60 --scene NAME`): 1 to 3 ms of GPU time per frame for the mathematical ones, about 4.5 ms for temple, at 30 frames a second.
 
 Switching: a change of mood or wallpaper takes 0.3 to 0.6 s. While the bar, window manager and compositor reload underneath, `rice-curtain` (`mathwall/curtain.c`) holds a copy of the screen on top and dissolves it away, so the old look melts into the new one. A change of live scene is a cross-fade inside the running program (`$XDG_RUNTIME_DIR/mathwall.goto`).
 

@@ -18,7 +18,6 @@
 #                            auto = day picture 06-18, night picture otherwise
 #   rice scene NAME|next|prev|list|none
 #                            show a live scene (`rice scene list`). none = back to the picture.
-#                              train, castle   paintings brought to life (rice ghibli fetches them)
 #                              temple          a drawn temple town at dusk or dawn
 #                              aizawa ...      strange attractors, harmonograph, phyllotaxis, chladni
 #   rice live on|off|always|toggle
@@ -27,7 +26,6 @@
 #   rice mode night|day|paper|next
 #   rice art [KIND] [SEED]   draw a new mathematical wallpaper and show it
 #                            (attractor harmonograph julia sacks rose; default: random)
-#   rice ghibli              fetch the stills listed in ~/.local/share/rice/ghibli.txt from ghibli.jp
 #   rice menu                mood, wallpaper, math art and live as a rofi menu
 #   rice status | help
 #
@@ -66,24 +64,11 @@ wall_now() {
 }
 wall_list() { find -L "${WALLS[@]}" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort; }
 
-# ---- scenes (mathwall). A scene file may say `// picture FILE`: it is made of that picture.
-# The picture a scene is made of, when it is on this machine.
-scene_picture() {
-  local rel
-  rel=$(sed -n '1,3s|^// picture \(..*\)$|\1|p' "$SCENE_DIR/$1.frag" 2>/dev/null | head -1)
-  [ -n "$rel" ] && [ -r "$PICTURES/$rel" ] && echo "$PICTURES/$rel"
-}
-# Scenes that can be shown here: all mathwall knows, less those whose picture is missing.
+# ---- scenes (mathwall)
+# The scenes that can be shown: all that mathwall knows, one a line.
 scene_list() {
-  local s
-  if [ -z "${SCENES+x}" ]; then
-    SCENES=
-    for s in $(command -v mathwall >/dev/null && mathwall --list 2>/dev/null); do
-      if grep -q '^// picture ..' "$SCENE_DIR/$s.frag" 2>/dev/null && [ -z "$(scene_picture "$s")" ]; then continue; fi
-      SCENES+="$s"$'\n'
-    done
-  fi
-  printf %s "$SCENES"
+  [ -n "${SCENES+x}" ] || SCENES=$(command -v mathwall >/dev/null && mathwall --list 2>/dev/null)
+  printf '%s\n' "$SCENES"
 }
 scene_now() {
   local s; s=$(cat "$STATE/scene" 2>/dev/null)
@@ -242,27 +227,6 @@ paper_wall() {
   echo "$out"
 }
 
-# A scene made of a painting gets it from mathwall's cache, at the size of the screen ($1 = the
-# picture as shown, in ink on paper in the paper mood).
-picture_prepare() {
-  magick "$1" -background black -alpha remove -resize "$(screen_size)^" -gravity center -extent "$(screen_size)" -depth 8 "ppm:$CACHE/live-picture.tmp" \
-    && mv "$CACHE/live-picture.tmp" "$CACHE/live-picture.ppm"
-}
-# Stills that Studio Ghibli publishes for personal use (https://www.ghibli.jp/works/). They are
-# fetched from the studio, never kept in this repository. The scenes train and castle need theirs.
-ghibli() {
-  local name n=0
-  mkdir -p "$PICTURES/ghibli"
-  while read -r name _; do
-    case $name in ''|'#'*) continue ;; esac
-    [ -s "$PICTURES/ghibli/$name.jpg" ] && continue
-    curl -fsSL -m 60 -o "$PICTURES/ghibli/$name.part" "https://www.ghibli.jp/gallery/$name.jpg" \
-      && mv "$PICTURES/ghibli/$name.part" "$PICTURES/ghibli/$name.jpg" && n=$((n + 1)) || echo "rice: could not fetch $name" >&2
-  done < "$DATA/rice/ghibli.txt"
-  rm -f "$PICTURES/ghibli/"*.part
-  echo "ghibli: $n fetched, $(find "$PICTURES/ghibli" -name '*.jpg' | wc -l) in $PICTURES/ghibli"
-}
-
 # ---- the dissolve: a copy of the screen held on top while the looks change underneath
 CURTAIN=
 curtain_up() {
@@ -279,17 +243,13 @@ curtain_down() {   # $1 = seconds the bar and the compositor need to be back; ri
 
 # ---- make the desktop match the three settings
 apply() {
-  local wall mode scene own kind source still shown look before after picom_before picom_after p pic_job= settle=0.2
+  local wall mode scene source shown look before after picom_before picom_after p settle=0.2
   scan
-  wall=$(wall_now); mode=$(mode_now); scene=$(scene_now); own=$(scene_picture "$scene")
+  wall=$(wall_now); mode=$(mode_now); scene=$(scene_now)
   [ -r "$wall" ] || { echo "rice: no such wallpaper: $wall" >&2; return 1; }
-  # kind of thing on the desktop: a picture (the wallpaper, or the one a scene is made of) or a drawing
-  if [ "$scene" = picture ]; then kind=picture; still=$wall
-  elif [ -n "$own" ]; then kind=picture; still=$own
-  else kind=drawing; still=; fi
-  # the palette is read from what is shown; a drawing in the desktop palette takes it from the wallpaper
-  source=${still:-$wall}
-  [ "$kind" = drawing ] && scene_own_colours "$scene" && source=$(scene_frame "$scene" 1600x900 "$mode")
+  # the palette is read from what is shown: the picture, or a live scene that has colours of its own
+  source=$wall
+  [ "$scene" != picture ] && scene_own_colours "$scene" && source=$(scene_frame "$scene" 1600x900 "$mode")
   [ -s "$source" ] || source=$wall
 
   curtain_up
@@ -300,10 +260,9 @@ apply() {
   picom_after=$(grep -E '^(shadow_opacity|picom_shader)=' "$HOME/.cache/theme/colors.sh" 2>/dev/null)
 
   # what the desktop shows while nothing moves: the picture (printed in ink on paper), or one frame of the drawing
-  if [ "$kind" = picture ]; then
-    shown=$(fitted "$still")
-    [ "$mode" = paper ] && shown=$(paper_wall "$still")
-    [ "$scene" != picture ] && { picture_prepare "$shown" & pic_job=$!; }
+  if [ "$scene" = picture ]; then
+    shown=$(fitted "$wall")
+    [ "$mode" = paper ] && shown=$(paper_wall "$wall")
   else
     shown="$CACHE/still.ppm"; look=dark; case $mode in day|paper) look=light ;; esac
     mathwall --snapshot "$shown.tmp" --scene "$scene" --size "$(screen_size)" --mood "$look" 2>/dev/null && mv "$shown.tmp" "$shown" || shown=$wall
@@ -322,7 +281,6 @@ apply() {
   if [ -z "$RICE_QUIET" ] && running i3 && [ "$picom_before" != "$picom_after" ]; then
     "$HOME/.config/i3/scripts/compositor.sh"; settle=0.45
   fi
-  [ -n "$pic_job" ] && wait "$pic_job"
   live_sync "$scene"
   curtain_down "$settle"
   # Everything above is what you see change. The pictures below are only needed the next time the
@@ -362,10 +320,13 @@ live_sync() {
     [ -n "$pid" ] || engine_stop
   fi
   if [ -n "$pid" ]; then
-    kill -USR1 "$pid"                                   # re-read the palette and the picture
+    # One signal, so the engine never sees half a change: USR2 = go to the scene named in the
+    # goto file (it reloads the palette and painting on the way), USR1 = same scene, new colours.
     if [ "$(cat "$RUN/mathwall.scene" 2>/dev/null)" != "$scene" ]; then
-      echo "$scene" > "$RUN/mathwall.goto"              # another scene: cross-fade to it (USR2 reads this file)
+      echo "$scene" > "$RUN/mathwall.goto"
       kill -USR2 "$pid"
+    else
+      kill -USR1 "$pid"
     fi
   else
     # in a subshell, so that nothing here ever waits for the wallpaper to exit
@@ -452,7 +413,7 @@ art() {
 # One grid for everything that can be on the desktop: day/night, whether it moves, the scenes,
 # the pictures. Thumbnails are made once and kept. The current choice is marked and preselected.
 pick() {
-  local list thumbs=() scenes=() sthumbs=() f i n choice cur=0 here own first=2
+  local list thumbs=() scenes=() sthumbs=() f i n choice cur=0 here first=2
   mapfile -t list < <(wall_list)
   mapfile -t scenes < <(scene_list | grep -vx picture)   # "picture" is every picture tile below
   mkdir -p "$CACHE/thumbs"
@@ -462,15 +423,9 @@ pick() {
   for i in "${!list[@]}"; do    # make the missing ones, six at a time
     [ -s "${thumbs[$i]}" ] || printf '%s\0%s\0' "${list[$i]}" "${thumbs[$i]}"
   done | xargs -0 -r -n 2 -P 6 sh -c 'magick "$0" -resize 300x300^ -gravity center -extent 300x300 "$1"'
-  # a scene made of a picture is shown by that picture; a drawn one by a frame of itself
+  # a live scene is shown by a frame of itself
   for f in "${scenes[@]}"; do
-    own=$(scene_picture "$f")
-    if [ -n "$own" ]; then
-      sthumbs+=("$CACHE/thumbs/$(printf '%s' "scene$own$(stat -c %Y "$own")" | md5sum | cut -c1-16).png")
-      [ -s "${sthumbs[-1]}" ] || magick "$own" -resize 300x300^ -gravity center -extent 300x300 "${sthumbs[-1]}" &
-    else
-      sthumbs+=("$(scene_frame_path "$f" 300x300)"); scene_frame "$f" 300x300 >/dev/null &
-    fi
+    sthumbs+=("$(scene_frame_path "$f" 300x300)"); scene_frame "$f" 300x300 >/dev/null &
   done
   wait
   find "$CACHE/thumbs" -name 'live-*' -mtime +10 -delete 2>/dev/null &   # frames of palettes long gone
@@ -519,7 +474,6 @@ case "${1:-apply}" in
   live)   shift; live "$@" ;;
   mode)   shift; mode "$@" ;;
   art)    shift; art "$@" ;;
-  ghibli) ghibli ;;
   menu)   menu ;;
   status) echo "mood:      $(mode_now)"; echo "wallpaper: $(wall_now) ($(wall_setting))"; echo "scene:     $(scene_now)"; echo "live:      $(live_now)$([ -n "$(engine)" ] && echo ' (running)')"
           echo "shown:     $(cat "$CACHE/shown" 2>/dev/null)"

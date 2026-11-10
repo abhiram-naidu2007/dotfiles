@@ -44,21 +44,6 @@ float sdTri(vec2 p, vec2 a, vec2 b, vec2 c) {
                  vec2(dot(q2, q2), s * (v2.x * e2.y - v2.y * e2.x)));
     return -sqrt(d.x) * sign(d.y);
 }
-// ---- for scenes made of a painting (first lines: `// picture ghibli/NAME.jpg`, relative to
-// ~/Pictures/wallpapers): the painting as a texture, and what to do with it
-uniform sampler2D u_pic;
-uniform float u_age;                    // seconds since this scene came on while moving (also in plain scenes)
-// A scene starts exactly as the still on the desktop and comes to life over a few seconds.
-float wake() { return smoothstep(0.0, 2.5, u_age); }
-// Painting coordinates run 0..1 with y up, like uv.
-vec3 pic(vec2 p) { return texture(u_pic, vec2(p.x, 1.0 - p.y)).rgb; }
-// The painting as if its paint flowed along `vel` (picture widths per second) for ever. Two copies
-// are carried along, half a period apart; each is shown while it is near its original place and
-// faded out while it is taken back, so nothing ever jumps.
-vec3 flowed(vec2 p, vec2 vel, float t, float period) {
-    float a = fract(t / period), b = fract(t / period + 0.5);
-    return mix(pic(p - vel * (a - 0.5) * period), pic(p - vel * (b - 0.5) * period), abs(2.0 * a - 1.0));
-}
 // 1 inside the box lo..hi, falling to 0 over `soft` outside it
 float inbox(vec2 p, vec2 lo, vec2 hi, float soft) {
     vec2 s = smoothstep(lo - soft, lo, p) * smoothstep(hi + soft, hi, p);
