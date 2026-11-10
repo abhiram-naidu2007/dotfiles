@@ -228,6 +228,10 @@ static void request(Mode *sw, const char *input) {
     RowKind kind = ROW_FILE;
 #ifdef EVRY_CALC
     kind = ROW_CALC;
+    if (*text == '=') {                 // the "=" that starts a calculation in the other tabs is not part of it here
+        text++;
+        while (*text == ' ') text++;
+    }
 #else
     if (*text == '=') {
         kind = ROW_CALC;
