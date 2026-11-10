@@ -9,3 +9,11 @@
 - Config: ~/.config/fish/config.fish (linked from ~/dotfiles/fish). Reload: `exec fish`.
 - Help: `help <command>` opens the docs in the browser. Scripts you copy from the web are bash: run with `bash script.sh`.
 - Back to bash any time: `bash`. Make fish the login shell later: `chsh -s /usr/bin/fish`.
+
+## Added tools
+- `ev [words]`: every file on the disk, live, with a preview. Enter open, Alt+Enter cd there, Ctrl+O edit, Ctrl+Y copy path.
+- `z name`: jump to a folder you have visited (zoxide). `zi`: pick one from a list.
+- Ctrl+R history search, Ctrl+T insert a file, Alt+C cd into a folder (fzf).
+- `ls` `ll` `lt` are eza (icons, git column, tree); `cat` is bat (syntax colours). Both use the terminal's palette.
+- `pokefetch`: system info beside a random Pokémon. `rice-greet`: the greeting again.
+- `pdf file.pdf`: zathura.

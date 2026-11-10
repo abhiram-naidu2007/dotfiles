@@ -10,14 +10,33 @@ LOST / STUCK?
 
 OPEN THINGS
   Super+Enter ...... terminal (fish)        also Ctrl+Alt+T
-  Super+A / Space .. app launcher (type name, Enter)
+  Super+A / Space .. launcher, Apps tab (type name, Enter). Click the Poke Ball on the bar for the same.
+  Super+O .......... find ANY file on the disk as you type      Super+D ... PDFs, newest first (opens zathura)
+  Super+= .......... calculator (qalc): sqrt(2), 20!, solve(x^2 = 2), 5 km to mi. Enter copies the result
   Super+Tab ........ window switcher
+        in the launcher: Ctrl+Tab next tab (keeps your text) | =2^10 calculates | ?words searches the web
+        on a file: Enter open | Shift+Enter show in folder | Ctrl+Y copy path | Ctrl+T terminal there | Ctrl+O edit
+        filters: pdf: doc: img: vid: audio: code: dir: file: ext:rs    folders: notes/   docs/intro
   Super+B .......... Thorium (last profile)   Super+Shift+B ... choose Thorium profile (3 accounts)
   Super+E .......... file manager
   Super+G .......... lock screen
   Print ............ screenshot of screen     Super+Shift+S ... select an area (saved in ~/Pictures + clipboard)
-  Super+I .......... quick settings (sound, network, bluetooth, display, re-theme)
+  Super+I .......... quick settings (sound, network, bluetooth, display, mood and wallpaper)
   Super+Shift+W .... showcase layout on workspace 3 (press again to close)
+
+LOOK (one palette for every program; details: rice help)
+  Super+T .......... mood: night -> day -> paper (cream and ink for reading; every window goes through an e-ink shader)
+  Super+Shift+T .... mood and wallpaper menu
+  Super+Ctrl+W ..... wallpaper picker; the colours are read from the picture
+  Super+Ctrl+A ..... draw a new mathematical wallpaper (attractor, harmonograph, Julia set, prime spiral, rose)
+  Bar: moon/sun/book icon = mood (click: next, right click: menu). HP bar = battery.
+  Pictures live in ~/dotfiles/wallpaper and ~/Pictures/wallpapers.   Terminal: rice wall next | rice art julia 42
+
+PDF (zathura; the page takes the palette's colours)
+  j k h l scroll | d u half page | J K page | gg G first/last | 12G page 12 | / search, n N next/previous
+  a fit page | s fit width | + - zoom | D two pages | i palette colours <-> the document's own
+  Tab outline | f follow a link | F11 fullscreen | r reload | Ctrl+N status bar | q quit
+  It remembers the page of every file and reloads when the file changes (LaTeX, Typst).
 
 DISPLAYS (external monitor)
   Super+P .......... display menu: mirror / extend / monitor only / laptop only
@@ -75,7 +94,7 @@ MEDIA KEYS: volume, mute, brightness, play/next/prev work from the keyboard.
 
 WHERE THINGS LIVE (edit in ~/dotfiles, never in ~/.config; changes apply after Super+Shift+C)
   i3/.config/i3/config .......... keys and behaviour
-  polybar/ rofi/ dunst/ picom/ ghostty/ fish/ gtk/
-  theme/apply.py ................ palette from wallpaper. Re-theme everything:  ~/dotfiles/wallpaper/wallpaper.sh
+  polybar/ rofi/ dunst/ picom/ ghostty/ fish/ gtk/ zathura/ evry/ rice/ art/
+  theme/apply.py ................ palette from wallpaper. Re-theme everything:  rice
   docs/fish.md .................. fish cheat sheet
   Undo any mistake:  cd ~/dotfiles && git log --oneline && git checkout <commit> -- <file>
