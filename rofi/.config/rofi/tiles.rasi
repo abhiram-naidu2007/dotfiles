@@ -1,0 +1,12 @@
+/* One row of large tiles: the power menu and the mood switch. */
+@import "config.rasi"
+
+window { width: 760px; border-radius: 24px; }
+mainbox { padding: 18px; spacing: 14px; children: [ message, listview ]; }
+message { padding: 0 6px; }
+textbox { horizontal-align: 0.5; font: "Inter 10"; markup: true; }
+listview { lines: 1; columns: 5; fixed-columns: true; spacing: 10px; flow: horizontal; }
+element { orientation: vertical; padding: 18px 6px 14px 6px; border-radius: 16px; background-color: @surface; }
+element normal.normal, element alternate.normal { background-color: @surface; }
+element-icon { enabled: false; }
+element-text { horizontal-align: 0.5; markup: true; }

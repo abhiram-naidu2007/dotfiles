@@ -1,0 +1,61 @@
+/* The launcher: art on the left, four live tabs on the right.
+   Apps (rofi drun) · Files (evry: every file on the disk, as you type) · Calc (qalc) · Windows
+   Opened by scripts/launcher.sh, which also picks the line of mathematics under the art. */
+@import "config.rasi"
+
+configuration {
+    display-drun: "󰀻  Apps";
+    display-files: "󰈞  Files";
+    display-calc: "󰃬  Calc";
+    display-window: "󰖯  Windows";
+    drun-display-format: "{name}\n<span size='small' alpha='62%'>{comment}</span>";
+    window-format: "{t}\n<span size='small' alpha='62%'>{c}  ·  workspace {w}</span>";
+}
+
+window { width: 940px; height: 580px; border-radius: 24px; }
+mainbox { orientation: horizontal; padding: 14px; spacing: 16px; children: [ art, panel ]; }
+
+/* art.png is cut from the wallpaper by `rice` every time the wallpaper changes */
+art {
+    expand: false;
+    width: 300px;
+    border-radius: 14px;
+    background-image: url("~/.cache/rice/art.png", height);
+    orientation: vertical;
+    children: [ dummy, textbox-caption ];
+}
+dummy { expand: true; }
+textbox-caption {
+    expand: false;
+    padding: 44px 16px 16px 16px;
+    border-radius: 0 0 14px 14px;
+    background-image: @veil;
+    text-color: @fg;
+    font: "Inter 10";
+    markup: true;
+    content: "(=^･ω･^=)";
+}
+
+panel { orientation: vertical; spacing: 12px; children: [ inputbar, mode-switcher, message, listview ]; }
+inputbar { padding: 13px 18px; border-radius: 14px; background-image: @grad-input; children: [ prompt, entry ]; }
+prompt { enabled: false; }
+entry { font: "Inter Medium 12"; placeholder: "apps, files, =maths, ?web"; }
+
+mode-switcher { spacing: 8px; }
+button {
+    padding: 7px 12px;
+    border-radius: 10px;
+    background-color: @surface;
+    text-color: @subtext;
+    font: "JetBrainsMono Nerd Font Propo Medium 10";
+    horizontal-align: 0.5;
+    cursor: pointer;
+}
+button selected { background-image: @grad-select; text-color: @bg-solid; }
+
+message { padding: 0 4px; }
+textbox { markup: true; }
+
+listview { lines: 6; spacing: 3px; }
+element { padding: 7px 12px; spacing: 14px; border-radius: 12px; }
+element-icon { size: 34px; }
