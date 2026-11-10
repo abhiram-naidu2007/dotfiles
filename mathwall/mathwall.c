@@ -638,7 +638,7 @@ int main(int argc, char **argv) {
                 pending = (pending + 1) % nscenes;          // a scene that does not compile is skipped
             scene = pending; pending = -1;
             last = now_seconds();                        // compiling the scene took a while: the fade starts now, not then
-            remember_scene(scene);
+            if (!offscreen) remember_scene(scene);       // a snapshot or benchmark must not pose as the wallpaper
             if (scenes[scene].kind == ORBIT) {
                 fill_orbit(&scenes[scene]);
                 glBindBuffer(GL_ARRAY_BUFFER, vbo);
