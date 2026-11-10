@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Neovim in Ghostty
+Comment=Open text files in Neovim inside a Ghostty window
+Exec=ghostty -e nvim %F
+Icon=nvim
+Terminal=false
+NoDisplay=true
+Categories=Utility;TextEditor;
+MimeType=text/plain;text/markdown;text/x-python;text/x-csrc;text/x-chdr;text/x-c++src;text/x-c++hdr;text/x-rust;text/x-lua;text/x-tex;text/x-makefile;text/x-shellscript;application/x-shellscript;application/json;application/toml;application/x-yaml;text/css;text/x-log;

@@ -1,0 +1,27 @@
+// fastfetch: colours are the terminal's 16, which are the desktop palette.
+// `pokefetch` (fish) runs this with a random Pokémon as the logo.
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+  "logo": { "padding": { "top": 1, "left": 2, "right": 3 } },
+  "display": { "separator": "  ", "key": { "width": 14 } },
+  "modules": [
+    { "type": "custom", "format": "{#2}┌──────────────── {#1}{#34}software{#0}{#2} ────────────────┐{#0}" },
+    { "type": "os",       "key": "  󰣇 os",      "keyColor": "blue" },
+    { "type": "kernel",   "key": "  󰌽 kernel",  "keyColor": "blue" },
+    { "type": "packages", "key": "  󰏖 packages","keyColor": "blue" },
+    { "type": "wm",       "key": "  󰖲 wm",      "keyColor": "blue" },
+    { "type": "terminal", "key": "  󰆍 terminal","keyColor": "blue" },
+    { "type": "shell",    "key": "  󰈺 shell",   "keyColor": "blue" },
+    { "type": "custom", "format": "{#2}├──────────────── {#1}{#35}hardware{#0}{#2} ────────────────┤{#0}" },
+    { "type": "host",     "key": "  󰌢 host",    "keyColor": "magenta" },
+    { "type": "cpu",      "key": "  󰍛 cpu",     "keyColor": "magenta" },
+    { "type": "gpu",      "key": "  󰢮 gpu",     "keyColor": "magenta" },
+    { "type": "memory",   "key": "  󰘚 memory",  "keyColor": "magenta" },
+    { "type": "disk",     "key": "  󰋊 disk",    "keyColor": "magenta", "folders": "/" },
+    { "type": "battery",  "key": "  󰁹 hp",      "keyColor": "magenta" },
+    { "type": "custom", "format": "{#2}├───────────────── {#1}{#33}uptime{#0}{#2} ─────────────────┤{#0}" },
+    { "type": "uptime",   "key": "  󰅐 awake",   "keyColor": "yellow" },
+    { "type": "custom", "format": "{#2}└──────────────────────────────────────────┘{#0}" },
+    { "type": "colors", "paddingLeft": 2, "symbol": "circle" }
+  ]
+}
