@@ -1,0 +1,1 @@
+{"manifest_version":3,"name":"YouTube hardware video","version":"1.0","description":"Hides AV1 from YouTube so it serves VP9, which this GPU decodes in hardware.","content_scripts":[{"matches":["*://*.youtube.com/*"],"js":["inject.js"],"run_at":"document_start","world":"MAIN","all_frames":true}]}
