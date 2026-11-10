@@ -44,3 +44,11 @@
     timeout = 1.5
     format = "<b>%s</b>  %b"
     history_ignore = yes
+
+# snapd's desktop helper offers to install the Papirus icon theme as a snap every time the
+# GTK theme changes, that is on every change of mood. Papirus is already installed from the
+# archive (snapd only looks among snaps), so the offer is noise: never shown, never kept.
+[snap-theme-offer]
+    summary = "Some required themes are missing*"
+    skip_display = true
+    history_ignore = yes

@@ -1,0 +1,5 @@
+# Stills fetched by `rice ghibli` from https://www.ghibli.jp/gallery/NAME.jpg into ~/Pictures/wallpapers/ghibli.
+# Studio Ghibli publishes them for personal use; they are not part of this repository.
+# They are what the live wallpapers `train` and `castle` are made of (see the first lines of those scenes).
+chihiro043   the sea railway at dusk (Spirited Away)
+howl011      the castle on the moor (Howl's Moving Castle)

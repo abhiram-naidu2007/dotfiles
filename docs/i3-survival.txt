@@ -34,11 +34,11 @@ OPEN THINGS
 LOOK (one palette for every program; details: rice help)
   Super+T .......... mood: night -> day -> paper (cream and ink for reading; every window goes through an e-ink shader)
   Super+Shift+T .... mood and wallpaper menu
-  Super+Ctrl+W ..... wallpaper picker: day/night, live attractors, pictures; the colours are read from the picture
+  Super+Ctrl+W ..... wallpaper picker: live and normal wallpapers; the colours are read from the picture
   Super+Ctrl+A ..... draw a new mathematical wallpaper (attractor, harmonograph, Julia set, prime spiral, rose)
-  Super+Ctrl+D ..... live wallpaper on / off. It moves only while the workspace is empty and never on battery.
-                     Super+Ctrl+N = next one: strange attractors, harmonograph, sunflower spiral, Chladni figures,
-                     flight over hills, temple at dusk, jaali, kolam, manga night. Pick one by sight in Super+Ctrl+W.
+  Super+Ctrl+D ..... live wallpapers move / hold still. They move only while the workspace is empty and never on battery.
+                     Super+Ctrl+N = next live wallpaper: the Spirited Away train, Howl's castle, the temple, the
+                     mathematical ones. Pick live or normal wallpapers by sight in Super+Ctrl+W.
   Bar: Poke Ball = launcher, globe = web. Moon/sun/book = mood (click: next, right click: menu). HP bar = battery.
                      Click the date = calendar. Wheel over the speaker = volume.
   Music pill (appears when anything plays, browser tabs too): click title = play/pause,

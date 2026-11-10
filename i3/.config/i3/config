@@ -65,13 +65,13 @@ bindsym $mod+t exec ~/.local/bin/rice mode next
 ## mood and wallpaper menu
 bindsym $mod+Shift+t exec ~/.local/bin/rice menu
 ## wallpaper picker (colours follow the picture)
-bindsym $mod+Control+w exec ~/.local/bin/rice wall pick
+bindsym $mod+Control+w exec ~/.local/bin/rice pick
 ## draw a new mathematical wallpaper
 bindsym $mod+Control+a exec ~/.local/bin/rice art
-## live wallpaper on / off (a strange attractor, turning; rests while windows are open)
+## live wallpaper moves / holds still (rests while windows are open)
 bindsym $mod+Control+d exec ~/.local/bin/rice live toggle
-## live wallpaper: next attractor
-bindsym $mod+Control+n exec ~/.local/bin/rice live next
+## next live wallpaper
+bindsym $mod+Control+n exec ~/.local/bin/rice scene next
 
 ## power menu
 bindsym $mod+Escape exec ~/.config/i3/scripts/powermenu.sh

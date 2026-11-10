@@ -54,6 +54,7 @@ build() {
   run make -C "$DOT/mochi" install     # ~/.local/bin/mochi
   run make -C "$DOT/mathwall" install  # ~/.local/bin/mathwall (live wallpaper)
   run "$HOME/.local/bin/evry" index
+  run "$HOME/.local/bin/rice" ghibli   # the two paintings behind the live wallpapers train and castle (from ghibli.jp)
   # Neovim: Python language server and debugger through uv; the rest installs itself on first start
   command -v basedpyright-langserver >/dev/null || run uv tool install basedpyright
   [ -x "$HOME/.local/share/nvim/debugpy/bin/python" ] || {

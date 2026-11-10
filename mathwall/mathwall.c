@@ -7,7 +7,7 @@
 //   curves   figures recomputed every frame: a harmonograph that keeps retuning itself, and a
 //            sunflower spiral (phyllotaxis) breathing around the golden angle
 //   shaders  every *.frag file in ~/.local/share/mathwall/scenes: one function that colours a
-//            pixel (hills, temple, jaali, kolam, manga, chladni ...). Drop a new file there and it
+//            pixel (temple, train, castle, chladni ...). Drop a new file there and it
 //            is a new wallpaper; _common.glsl in that folder documents what a scene can use.
 // Lines and points are summed into a floating-point buffer and tone-mapped, so crowded places
 // glow instead of clipping. Colours are the desktop palette (~/.cache/theme/colors.sh); on a
@@ -20,13 +20,18 @@
 //   - 30 frames a second
 // Flags: --always (animate behind windows too)  --battery (also on battery)  --fps N
 //        --scene NAME  --cycle SECONDS (move to the next scene; 0 = never; default 900)
-//        --snapshot FILE.ppm [--size WxH]   draw one frame into a file and exit (thumbnails)
+//        --snapshot FILE.ppm [--size WxH] [--at SECONDS]
+//                                           draw one frame into a file and exit (thumbnails);
+//                                           --at picks the moment of the scene (default 40)
 //        --list | --list-own                scene names | those with colours of their own
 //        --bench N                          draw N frames off screen, print milliseconds per frame
 //        --mood light|dark                  draw for that mood whatever the desktop's is (previews)
+// A scene file may say `// picture` (it is made of a painting, handed over as the texture u_pic)
+// and `// fps N` (its own frame rate); see _common.glsl.
 // Signals: USR1 reload the palette, USR2 next scene (or the one named in
 //          $XDG_RUNTIME_DIR/mathwall.goto, if that file exists: a fade to a chosen scene), TERM quit.
-// The name of the scene on screen is kept in $XDG_RUNTIME_DIR/mathwall.scene.
+// In $XDG_RUNTIME_DIR: mathwall.pid (this process), mathwall.scene (the scene on screen),
+// mathwall.picture (the time stamp of the picture file it has loaded).
 // `rice live ...` and the wallpaper picker drive it. Build: make -C ~/dotfiles/mathwall install
 #define _GNU_SOURCE
 #define GL_GLEXT_PROTOTYPES
@@ -46,13 +51,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
 #define POINTS 240000          // an orbit; also the size of the vertex buffer
 #define CURVE_POINTS 16000
 #define DOT_POINTS 2600
-#define FADE_SECONDS 1.6
+#define FADE_SECONDS 0.6
 
 typedef void (*Flow)(const double *p, double *d);
 
@@ -84,15 +90,16 @@ typedef struct {
     Flow flow; double dt, start[3];          // orbits
     char path[600]; float scale; int own;    // shader files: draw size relative to the screen, own colours
     GLuint prog; int tried;
+    int pic, fps;                            // shader files: wants the wallpaper as a texture; its own frame rate
 } Scene;
 static Scene scenes[64] = {
-    {"aizawa", ORBIT, aizawa, 0.012, {0.1, 0, 0}, "", 1, 0, 0, 0},
-    {"lorenz", ORBIT, lorenz, 0.006, {1, 1, 1}, "", 1, 0, 0, 0},
-    {"thomas", ORBIT, thomas, 0.06, {1.1, 1.1, -0.01}, "", 1, 0, 0, 0},
-    {"halvorsen", ORBIT, halvorsen, 0.006, {-5, 0, 0}, "", 1, 0, 0, 0},
-    {"dadras", ORBIT, dadras, 0.008, {1.1, 2.1, -2}, "", 1, 0, 0, 0},
-    {"harmonograph", CURVE, NULL, 0, {0, 0, 0}, "", 1, 0, 0, 0},
-    {"phyllotaxis", DOTS, NULL, 0, {0, 0, 0}, "", 1, 0, 0, 0},
+    {"aizawa", ORBIT, aizawa, 0.012, {0.1, 0, 0}, "", 1, 0, 0, 0, 0, 0},
+    {"lorenz", ORBIT, lorenz, 0.006, {1, 1, 1}, "", 1, 0, 0, 0, 0, 0},
+    {"thomas", ORBIT, thomas, 0.06, {1.1, 1.1, -0.01}, "", 1, 0, 0, 0, 0, 0},
+    {"halvorsen", ORBIT, halvorsen, 0.006, {-5, 0, 0}, "", 1, 0, 0, 0, 0, 0},
+    {"dadras", ORBIT, dadras, 0.008, {1.1, 2.1, -2}, "", 1, 0, 0, 0, 0, 0},
+    {"harmonograph", CURVE, NULL, 0, {0, 0, 0}, "", 1, 0, 0, 0, 0, 0},
+    {"phyllotaxis", DOTS, NULL, 0, {0, 0, 0}, "", 1, 0, 0, 0, 0, 0},
 };
 static int nscenes = 7;
 static char scene_dir[512];
@@ -151,6 +158,8 @@ static void find_scene_files(void) {
             if (body) *body = 0;
             if ((p = strstr(text, "// scale "))) s->scale = strtof(p + 9, NULL);
             if (strstr(text, "// own-colours")) s->own = 1;
+            if (strstr(text, "// picture")) s->pic = 1;
+            if ((p = strstr(text, "// fps "))) s->fps = atoi(p + 7);
             if (s->scale < 0.25f || s->scale > 1) s->scale = 1;
             free(text);
         }
@@ -327,6 +336,12 @@ static const char *SHOW_FS =      // a finished picture, scaled to the screen an
     "out vec4 frag;\n"
     "void main() { frag = vec4(mix(u_bg, texture(u_tex, gl_FragCoord.xy / u_res).rgb, u_fade), 1.0); }\n";
 
+static const char *PRESENT_FS =   // what reaches the screen: the frame just drawn, cross-faded from the one kept at the last change
+    "#version 330 core\n"
+    "uniform sampler2D u_new, u_old; uniform vec2 u_res; uniform float u_fade;\n"
+    "out vec4 frag;\n"
+    "void main() { vec2 uv = gl_FragCoord.xy / u_res; frag = vec4(mix(texture(u_old, uv).rgb, texture(u_new, uv).rgb, u_fade), 1.0); }\n";
+
 static GLuint compile(GLenum type, const char *src, const char *what) {
     GLuint s = glCreateShader(type);
     glShaderSource(s, 1, &src, NULL);
@@ -433,12 +448,74 @@ static int screen_on(void) {
 
 static int xerror(Display *d, XErrorEvent *e) { (void)d; (void)e; return 0; }   // a window may vanish while it is asked
 
+// $XDG_RUNTIME_DIR/mathwall.pid: how `rice` finds the wallpaper of this session (and only this one).
+static char pid_path[512];
+static void forget_pid(void) { if (pid_path[0]) unlink(pid_path); }
+static void remember_pid(void) {
+    const char *dir = getenv("XDG_RUNTIME_DIR");
+    snprintf(pid_path, sizeof pid_path, "%s/mathwall.pid", dir ? dir : "/tmp");
+    FILE *f = fopen(pid_path, "w");
+    if (f) { fprintf(f, "%d\n", (int)getpid()); fclose(f); atexit(forget_pid); }
+    else pid_path[0] = 0;
+}
+
 static void remember_scene(int scene) {
     char path[512];
     const char *dir = getenv("XDG_RUNTIME_DIR");
     snprintf(path, sizeof path, "%s/mathwall.scene", dir ? dir : "/tmp");
     FILE *f = fopen(path, "w");
     if (f) { fprintf(f, "%s\n", scenes[scene].name); fclose(f); }
+}
+
+// ---- scenes made of a painting: `rice` writes it, at the size of the screen, to
+// ~/.cache/rice/live-picture.ppm (P6). USR1 makes us look at it again.
+static GLuint pic_tex;
+static long long pic_stamp;
+
+static void cache_path(char *out, size_t n, const char *name) {
+    const char *c = getenv("XDG_CACHE_HOME");
+    if (c && *c) snprintf(out, n, "%s/rice/%s", c, name);
+    else snprintf(out, n, "%s/.cache/rice/%s", getenv("HOME"), name);
+}
+static long long file_stamp(const char *path) {
+    struct stat st;
+    return stat(path, &st) ? 0 : st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
+}
+// A binary colour PNM with 8 bits per channel: malloc'd pixels, top row first.
+static unsigned char *read_ppm(const char *path, int *w, int *h) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    int maxv = 0;
+    char magic[3] = "";
+    unsigned char *px = NULL;
+    if (fscanf(f, "%2s %d %d %d", magic, w, h, &maxv) == 4 && !strcmp(magic, "P6") && maxv == 255
+        && *w > 0 && *h > 0 && *w <= 8192 && *h <= 8192) {
+        fgetc(f);                                        // the one blank after the header
+        size_t n = (size_t)*w * *h * 3;
+        px = malloc(n);
+        if (px && fread(px, 1, n, f) != n) { free(px); px = NULL; }
+    }
+    fclose(f);
+    return px;
+}
+static int picture_is_new(void) {
+    char path[600];
+    cache_path(path, sizeof path, "live-picture.ppm");
+    return file_stamp(path) != pic_stamp;
+}
+// Load the painting if it changed since last time.
+static void load_picture(void) {
+    char path[600];
+    int w, h;
+    unsigned char *px;
+    cache_path(path, sizeof path, "live-picture.ppm");
+    long long stamp = file_stamp(path);
+    if (stamp == pic_stamp || !(px = read_ppm(path, &w, &h))) return;
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glBindTexture(GL_TEXTURE_2D, pic_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, px);
+    free(px);
+    pic_stamp = stamp;
 }
 
 // The scene named in $XDG_RUNTIME_DIR/mathwall.goto (the file is used up), or -1.
@@ -457,16 +534,17 @@ static int wanted_scene(void) {
 }
 
 int main(int argc, char **argv) {
-    int fps = 30, always = 0, battery = 0, scene = -1, snap_w = 0, snap_h = 0, bench = 0, list = 0, force_mood = -1;
+    int fps = 30, fps_given = 0, always = 0, battery = 0, scene = -1, snap_w = 0, snap_h = 0, bench = 0, list = 0, force_mood = -1;
     const char *snapshot = NULL, *wanted = NULL;
-    double cycle = 900;
+    double cycle = 900, at = 40;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--always")) always = 1;
         else if (!strcmp(argv[i], "--battery")) battery = 1;
         else if (!strcmp(argv[i], "--list")) list = 1;
         else if (!strcmp(argv[i], "--list-own")) list = 2;
-        else if (!strcmp(argv[i], "--fps") && i + 1 < argc) fps = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--fps") && i + 1 < argc) { fps = atoi(argv[++i]); fps_given = 1; }
         else if (!strcmp(argv[i], "--cycle") && i + 1 < argc) cycle = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--at") && i + 1 < argc) at = atof(argv[++i]);
         else if (!strcmp(argv[i], "--bench") && i + 1 < argc) bench = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--snapshot") && i + 1 < argc) snapshot = argv[++i];
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &snap_w, &snap_h);
@@ -545,9 +623,9 @@ int main(int argc, char **argv) {
     if (swap_interval) swap_interval(dpy, win, 0);      // paced by the sleep below, not by the 144 Hz panel
 
     GLuint points = program(POINT_VS, POINT_FS, "figure shader"), tone = program(SCREEN_VS, TONE_FS, "tone shader"),
-           show = program(SCREEN_VS, SHOW_FS, "show shader");
+           show = program(SCREEN_VS, SHOW_FS, "show shader"), present = program(SCREEN_VS, PRESENT_FS, "present shader");
     if (!points || !tone || !show) return 1;
-    GLuint vao, vbo, empty_vao, fbo, sum, art_fbo, art_tex, shot_fbo = 0, shot_tex = 0;
+    GLuint vao, vbo, empty_vao, fbo, sum, art_fbo, art_tex, final_fbo, frames_tex[2], shot_fbo = 0, shot_tex = 0;
     verts = malloc(sizeof(float) * 5 * POINTS);
     glGenVertexArrays(1, &vao); glBindVertexArray(vao);
     glGenBuffers(1, &vbo); glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -563,6 +641,12 @@ int main(int argc, char **argv) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sum, 0);
+    glGenTextures(1, &pic_tex);
+    glBindTexture(GL_TEXTURE_2D, pic_tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glGenFramebuffers(1, &art_fbo); glGenTextures(1, &art_tex);
     glBindTexture(GL_TEXTURE_2D, art_tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -571,6 +655,20 @@ int main(int argc, char **argv) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindFramebuffer(GL_FRAMEBUFFER, art_fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, art_tex, 0);
+    // final: every scene ends up here.  kept: the frame that was on screen at the last change of
+    // scene, picture or palette; the new one is cross-faded in from it.
+    glGenFramebuffers(1, &final_fbo); glGenTextures(2, frames_tex);
+    GLuint final_tex = frames_tex[0], kept_tex = frames_tex[1];
+    for (int i = 0; i < 2; i++) {
+        glBindTexture(GL_TEXTURE_2D, frames_tex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, final_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, final_tex, 0);
+#define KEEP_FRAME() do { glBindFramebuffer(GL_READ_FRAMEBUFFER, final_fbo); glBindTexture(GL_TEXTURE_2D, kept_tex); \
+                          glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, W, H); } while (0)
     if (offscreen) {                                   // the finished frame goes into a texture, not the window
         glGenFramebuffers(1, &shot_fbo); glGenTextures(1, &shot_tex);
         glBindTexture(GL_TEXTURE_2D, shot_tex);
@@ -581,25 +679,32 @@ int main(int argc, char **argv) {
     glEnable(GL_PROGRAM_POINT_SIZE);
     load_palette();
     if (force_mood >= 0) light_mood = force_mood;
+    glBindFramebuffer(GL_FRAMEBUFFER, final_fbo);      // the first scene fades in from the background colour
+    glClearColor(srgb[C_BG][0], srgb[C_BG][1], srgb[C_BG][2], 1); glClear(GL_COLOR_BUFFER_BIT);
+    KEEP_FRAME();
 
-    double clock = (double)(rand() % 600), fade = 0, fade_dir = 1;     // start somewhere along the turn
-    if (offscreen) { clock = 40; fade = 1; }                            // the same view every time
+    // Every scene starts at the same moment as its still (--snapshot), fully shown: `rice` puts that
+    // still on the root window, so the wallpaper starts to move without any jump.
+    double clock = at, fade = 1, fade_dir = 1, age = offscreen ? 100 : 0;
+    if (!offscreen) remember_pid();
     double last = now_seconds(), checked = 0, scene_age = 0, bench_start = 0;
     int moving = 1, redraw = 1, pending = scene, art_w = 0, art_h = 0, frames = 0;
     scene = -1;
     while (!quit_flag) {
         // -- enter the pending scene (at start, and at the dark middle of a fade)
-        if (pending >= 0 && (scene < 0 || fade <= 0 || offscreen)) {
+        if (pending >= 0) {
             int tries = 0;
             while (scenes[pending].kind == SHADER && !scene_program(&scenes[pending]) && tries++ < nscenes)
                 pending = (pending + 1) % nscenes;          // a scene that does not compile is skipped
             scene = pending; pending = -1;
+            if (!offscreen) age = 0;
             remember_scene(scene);
             if (scenes[scene].kind == ORBIT) {
                 fill_orbit(&scenes[scene]);
                 glBindBuffer(GL_ARRAY_BUFFER, vbo);
                 glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 5 * nverts, verts);
             }
+            if (scenes[scene].pic) load_picture();
             if (scenes[scene].kind == SHADER) {
                 int w = (int)(W * scenes[scene].scale), h = (int)(H * scenes[scene].scale);
                 if (w != art_w || h != art_h) {
@@ -621,23 +726,36 @@ int main(int argc, char **argv) {
                 XResizeWindow(dpy, win, W, H);
                 glBindTexture(GL_TEXTURE_2D, sum);
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, W, H, 0, GL_RGBA, GL_HALF_FLOAT, NULL);
+                for (int i = 0; i < 2; i++) {
+                    glBindTexture(GL_TEXTURE_2D, frames_tex[i]);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+                }
                 art_w = art_h = 0; pending = scene; fade = 0;               // rebuild the scene's own buffer
                 redraw = 1;
             }
         }
-        if (pending >= 0 && fade <= 0) continue;
         double t = now_seconds(), dt = t - last;
         last = t;
         if (!offscreen && t - checked > 1.0) {
             checked = t;
             moving = screen_on() && (battery || on_mains()) && (always || workspace_empty());
         }
-        if (reload_flag) { reload_flag = 0; load_palette(); if (force_mood >= 0) light_mood = force_mood; redraw = 1; }
+        if (reload_flag) {
+            float before[NCOL][3];
+            int mood_before = light_mood;
+            memcpy(before, srgb, sizeof before);
+            reload_flag = 0; load_palette(); if (force_mood >= 0) light_mood = force_mood; redraw = 1;
+            int recoloured = memcmp(before, srgb, sizeof before) || mood_before != light_mood;
+            if (s->pic && picture_is_new()) { KEEP_FRAME(); fade = 0; pending = scene; }    // another picture: cross-fade to it
+            else {
+                if (recoloured) { KEEP_FRAME(); fade = 0; fade_dir = 1; }                  // new colours: cross-fade too
+            }
+        }
         if (next_flag || (cycle > 0 && scene_age > cycle && moving)) {
             int to = next_flag ? wanted_scene() : -1;    // a scene asked for by name, else the next one
             next_flag = 0; scene_age = 0;
             pending = to >= 0 ? to : (scene + 1) % nscenes;
-            fade_dir = -1;                               // fade out, swap, fade in
+            KEEP_FRAME(); fade = 0;                      // cross-fade from what is on screen now
         }
         int fading = (fade_dir > 0 && fade < 1) || fade_dir < 0;
         if (!moving && !fading && !redraw) {             // nothing to do: sleep until X or a signal wakes us
@@ -648,7 +766,7 @@ int main(int argc, char **argv) {
         }
         if (dt > 0.25) dt = 0.25;
         if (bench) dt = 1.0 / 30;
-        if (moving) { clock += dt; scene_age += dt; }
+        if (moving) { clock += dt; scene_age += dt; age += dt; }
         if (!offscreen) fade += fade_dir * dt / FADE_SECONDS;
         if (fade > 1) fade = 1;
         if (fade < 0) fade = 0;
@@ -664,16 +782,22 @@ int main(int argc, char **argv) {
             glUniform2f(glGetUniformLocation(s->prog, "u_res"), (float)art_w, (float)art_h);
             glUniform1f(glGetUniformLocation(s->prog, "u_light"), (float)light_mood);
             for (int c = 0; c < NCOL; c++) glUniform3fv(glGetUniformLocation(s->prog, COLOUR_UNIFORMS[c]), 1, srgb[c]);
+            glUniform1f(glGetUniformLocation(s->prog, "u_age"), (float)age);
+            if (s->pic) {
+                glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, pic_tex);
+                glActiveTexture(GL_TEXTURE0);
+                glUniform1i(glGetUniformLocation(s->prog, "u_pic"), 1);
+            }
             glBindVertexArray(empty_vao);
             glDrawArrays(GL_TRIANGLES, 0, 3);
 
-            glBindFramebuffer(GL_FRAMEBUFFER, target);
+            glBindFramebuffer(GL_FRAMEBUFFER, final_fbo);
             glViewport(0, 0, W, H);
             glUseProgram(show);
             glBindTexture(GL_TEXTURE_2D, art_tex);
             glUniform2f(glGetUniformLocation(show, "u_res"), (float)W, (float)H);
             glUniform3fv(glGetUniformLocation(show, "u_bg"), 1, srgb[C_BG]);
-            glUniform1f(glGetUniformLocation(show, "u_fade"), ease);
+            glUniform1f(glGetUniformLocation(show, "u_fade"), 1.0f);
             glDrawArrays(GL_TRIANGLES, 0, 3);
         } else {
             // camera: orbits turn once in about three minutes with a gentle nod; flat figures
@@ -715,7 +839,7 @@ int main(int argc, char **argv) {
                 glUniform1i(mode, 1); glDrawArrays(GL_POINTS, 0, nverts);
             }
 
-            glBindFramebuffer(GL_FRAMEBUFFER, target);
+            glBindFramebuffer(GL_FRAMEBUFFER, final_fbo);
             glDisable(GL_BLEND);
             glUseProgram(tone);
             glBindTexture(GL_TEXTURE_2D, sum);
@@ -723,11 +847,25 @@ int main(int argc, char **argv) {
             glUniform3fv(glGetUniformLocation(tone, "u_bg"), 1, linear[C_BG]);
             glUniform3fv(glGetUniformLocation(tone, "u_deep"), 1, linear[C_DEEP]);
             glUniform1f(glGetUniformLocation(tone, "u_light"), (float)light_mood);
-            glUniform1f(glGetUniformLocation(tone, "u_fade"), ease);
+            glUniform1f(glGetUniformLocation(tone, "u_fade"), 1.0f);
             glUniform1f(glGetUniformLocation(tone, "u_gain"), (light_mood ? 0.55f : 0.85f) * (s->kind == DOTS ? 1.6f : 1.0f));
             glBindVertexArray(empty_vao);
             glDrawArrays(GL_TRIANGLES, 0, 3);
         }
+
+        // to the screen: the new frame over the kept one
+        glBindFramebuffer(GL_FRAMEBUFFER, target);
+        glViewport(0, 0, W, H);
+        glDisable(GL_BLEND);
+        glUseProgram(present);
+        glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, kept_tex);
+        glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, final_tex);
+        glUniform1i(glGetUniformLocation(present, "u_new"), 0);
+        glUniform1i(glGetUniformLocation(present, "u_old"), 3);
+        glUniform2f(glGetUniformLocation(present, "u_res"), (float)W, (float)H);
+        glUniform1f(glGetUniformLocation(present, "u_fade"), ease);
+        glBindVertexArray(empty_vao);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
 
         if (bench) {
             glFinish();
@@ -752,7 +890,7 @@ int main(int argc, char **argv) {
         glXSwapBuffers(dpy, win);
         redraw = 0;
 
-        double spent = now_seconds() - t, frame = 1.0 / fps;
+        double spent = now_seconds() - t, frame = 1.0 / (s->fps > 0 && !fps_given ? s->fps : fps);
         if (spent < frame) {
             struct timespec nap = {0, (long)((frame - spent) * 1e9)};
             nanosleep(&nap, NULL);

@@ -22,8 +22,8 @@ Each step is idempotent. `link` moves any clashing file to `.backup/<date>/` fir
 | Super+Shift+S | screenshot: drag an area or click a window. Super+Ctrl+S: capture menu. Super+Ctrl+R: record the screen (again to stop) |
 | Super+C | clipboard history. Super+`: drop-down terminal |
 | Super+T | mood: night, day, paper. Super+Shift+T: mood and wallpaper menu |
-| Super+Ctrl+W | wallpaper picker: day/night, live attractors, pictures. Super+Ctrl+A: draw a new mathematical wallpaper |
-| Super+Ctrl+D | live wallpaper on / off (a strange attractor, turning). Super+Ctrl+N: next attractor |
+| Super+Ctrl+W | wallpaper picker: live and normal wallpapers. Super+Ctrl+A: draw a new mathematical wallpaper |
+| Super+Ctrl+D | live wallpapers move / hold still. Super+Ctrl+N: next live wallpaper |
 | Super+/ | **every key and command**, searchable (the launcher's Keys tab). Sources: the `## text` lines in the i3 config and `rice/.local/share/rice/keys.tsv`. Printed sheets: `docs/i3-survival.txt`, `docs/nvim.md` |
 
 - Look: `rice` (see `rice help`). Never edit generated files (`colors.*`, `starship.toml`, `gtk.css`, `nvim/colors/rice.lua` ...): edit `theme/templates/*` and run `rice`.
@@ -53,21 +53,26 @@ Each step is idempotent. `link` moves any clashing file to `.backup/<date>/` fir
 
 A change reaches open windows at once: polybar, i3, dunst, ghostty, fish, Neovim (colorscheme `rice`), zathura, GTK apps, cava, the live wallpaper, the browser's next new tab. Thorium's frame colours change on restart.
 
-## Live wallpapers (`mathwall/`, `rice live on|off|always|next|NAME`, or pick one in Super+Ctrl+W)
-An OpenGL program with three kinds of scene, all asleep unless the wallpaper is in full view (empty workspace, on mains, screen on):
+## Wallpapers: normal and live
+There are two kinds, and `rice pick` (Super+Ctrl+W) shows both in one grid (click or Enter; the wheel or two fingers scroll):
 
-| Scene | What |
+- **Normal**: a picture, still. Put yours in `~/Pictures/wallpapers` (any depth) or `wallpaper/`. `rice wall PATH|next|prev|random|auto`.
+- **Live**: a scene drawn by the graphics card, `rice scene NAME|next|none`. Scenes are the `.frag` files in `rice/.local/share/mathwall/scenes/` (linked to `~/.local/share/mathwall/scenes/`) and the built-in ones of the program in `mathwall/`. `rice live on|off|always|toggle` decides whether a live scene moves (off: a still frame of it). It moves only while the workspace is empty, on mains and with the screen on: nothing runs otherwise.
+
+Choosing a picture shows the picture; choosing a live scene turns live on. Changing the mood never changes what is shown.
+
+| Live scene | What |
 |---|---|
+| train | the sea railway at dusk (Spirited Away): clouds drift, the water ripples, the windows glow; the painting is otherwise left as painted |
+| castle | the moving castle on the moor (Howl): storm clouds roll, steam rises from the stacks, the castle heaves, the grass bends |
+| temple | a temple town across its tank, drawn in code: a seven-storey gopuram with barrel roof and pot finials, palms, hills, all mirrored in the water; dusk with oil lamps, or dawn with mist and birds |
 | aizawa, lorenz, thomas, halvorsen, dadras | one orbit of a chaotic system as a 240 000-vertex line, slowly turning, pulses running along it |
 | harmonograph, phyllotaxis | a pendulum figure that keeps retuning itself; a sunflower spiral breathing around the golden angle |
 | chladni | sand figures of a vibrating plate whose modes drift |
-| hills | a slow flight over grass hills and lakes, in real 3D (every pixel is a ray walked through a height field): cumulus, cloud shadows, flowers; moonlight, stars and fireflies on a dark mood |
-| temple | a temple town across its tank: a seven-storey gopuram with barrel roof and pot finials, palms, hills, all mirrored in the water; dusk with oil lamps, or dawn with mist and birds |
-| jaali | three Mughal arches filled with the star-and-cross lattice; a light moves behind and throws the pattern on the floor |
-| kolam | a sikku kolam: one line looping round every dot of a diamond grid, redrawn every twenty seconds |
-| manga | screentone sky, halftone moon, drawn clouds, a sea of wave scales, petals in the accent colour |
 
-The last six are shader files in `rice/.local/share/mathwall/scenes/` (one function each; `_common.glsl` documents what a scene can use). A new `.frag` file there is a new wallpaper. Scenes marked `// own-colours` (hills, temple) are where the desktop palette is read from while they are on; the others are drawn in the palette. Cost on this machine at 1080p (`mathwall --bench 60 --scene NAME`): 1 to 3 ms of GPU time per frame for the mathematical ones, jaali and kolam; 4.5 ms for temple, 6.5 ms for hills and manga (drawn at reduced size). That is at 30 frames a second, and nothing at all while a window is open. Choosing another scene fades to it; the running program is told which one through `$XDG_RUNTIME_DIR/mathwall.goto`.
+`train` and `castle` are made from stills that Studio Ghibli publishes for personal use. They are not in this repository: `rice ghibli` fetches them (list in `rice/.local/share/rice/ghibli.txt`) and the two scenes only appear once they are there. A scene file says which picture it is made of on its first line (`// picture ghibli/NAME.jpg`); `_common.glsl` documents what a scene can use, and a new `.frag` file is a new live wallpaper. Cost at 1080p (`mathwall --bench 60 --scene NAME`): 1 to 3 ms of GPU time per frame for the mathematical ones, 3.5 to 4.5 ms for temple, train and castle, at 30 to 60 frames a second.
+
+Switching: a change of mood or wallpaper takes 0.3 to 0.6 s. While the bar, window manager and compositor reload underneath, `rice-curtain` (`mathwall/curtain.c`) holds a copy of the screen on top and dissolves it away, so the old look melts into the new one. A change of live scene is a cross-fade inside the running program (`$XDG_RUNTIME_DIR/mathwall.goto`).
 
 ## Neovim (`nvim/`)
 Own config, 31 plugins, about 25 ms to start. Keys, trainers and a learning ladder: `docs/nvim.md`.
@@ -81,7 +86,7 @@ Own config, 31 plugins, about 25 ms to start. Keys, trainers and a learning ladd
 | `i3/` | window manager config and scripts (power menu, screenshot, key list, browser profile picker, display layouts, showcase, compositor start) |
 | `polybar/ rofi/ dunst/ picom/ ghostty/ fish/ gtk/ zathura/ fastfetch/` | bar, launcher, notifications, compositor, terminal, shell, cursor, PDF reader, system info |
 | `evry/` | file index + search (Rust) and the live rofi tabs (C). `make -C evry install` |
-| `mathwall/` | the live wallpaper (C, OpenGL). `make -C mathwall install` |
+| `mathwall/` | the live wallpaper (C, OpenGL) and `rice-curtain`, the dissolve between two looks. `make -C mathwall install` |
 | `nvim/` | Neovim config |
 | `rice/` | `rice` (wallpaper, mood, math art, menus), `rice-greet` (the Pokémon and the line of mathematics in each new terminal), `rice-preview`, `math.txt` |
 | `art/` | `mathart.py`: wallpapers from mathematics (Clifford attractor, harmonograph, Julia set, Sacks prime spiral, Maurer rose), drawn in the palette's own colour system. `sprites.py`: Pokémon and mathematics data for the new-tab page |

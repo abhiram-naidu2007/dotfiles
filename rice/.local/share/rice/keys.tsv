@@ -24,9 +24,9 @@ bar	HP	battery; click: quick settings
 bar	moon / sun / book	mood. click: next mood. right click: mood and wallpaper menu
 bar	power	power menu
 terminal	rice help	everything `rice` can do (wallpaper, mood, live wallpaper, math art)
-terminal	rice wall pick	wallpaper picker: day/night, live attractors, pictures in ~/Pictures/wallpapers
+terminal	rice pick	picker: live wallpapers (scenes) and normal wallpapers (pictures in ~/Pictures/wallpapers)
 terminal	rice mode night|day|paper	change the mood of the whole desktop
-terminal	rice live on|off|next|NAME	animated wallpaper: attractors, harmonograph, phyllotaxis, chladni, hills, temple, jaali, kolam, manga
+terminal	rice scene next / rice live toggle	next live wallpaper / live wallpapers move or hold still
 terminal	rice art [kind]	draw a new mathematical wallpaper: attractor harmonograph julia sacks rose
 terminal	evry WORDS	find files anywhere on the disk (same search as the launcher)
 terminal	ev	the same, live, with a preview. Enter open, Alt+Enter cd there, Ctrl+O edit, Ctrl+Y copy path
