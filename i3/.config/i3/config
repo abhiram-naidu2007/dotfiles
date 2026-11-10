@@ -26,12 +26,24 @@ bindsym $mod+Return exec ghostty
 bindsym $mod+KP_Enter exec ghostty
 ## terminal (Ctrl+Alt+T)
 bindsym Control+Mod1+t exec ghostty
-## app launcher
-bindsym $mod+a exec env XDG_CURRENT_DESKTOP=XFCE rofi -show drun
-## app launcher
-bindsym $mod+space exec env XDG_CURRENT_DESKTOP=XFCE rofi -show drun
+## launcher: apps (Ctrl+Tab = next tab: files, calc, windows)
+bindsym $mod+a exec ~/.config/rofi/scripts/launcher.sh apps
+## launcher: apps
+bindsym $mod+space exec ~/.config/rofi/scripts/launcher.sh apps
+## find any file on the disk as you type (Everything)
+bindsym $mod+o exec ~/.config/rofi/scripts/launcher.sh files
+## documents: PDFs, newest first, open in zathura
+bindsym $mod+d exec ~/.config/rofi/scripts/launcher.sh docs
+## calculator (qalc): also =2^10 in any launcher tab
+bindsym $mod+equal exec ~/.config/rofi/scripts/launcher.sh calc
 ## window switcher
-bindsym $mod+Tab exec rofi -show window
+bindsym $mod+Tab exec ~/.config/rofi/scripts/launcher.sh windows
+## kaomoji picker: copies the choice to the clipboard
+bindsym $mod+period exec ~/.config/i3/scripts/kaomoji.sh
+
+## desktop cat: press to summon, press again to dismiss
+bindsym $mod+n exec ~/.config/i3/scripts/mochi-toggle.sh
+
 ## browser (Thorium)
 bindsym $mod+b exec thorium-browser --new-window
 ## browser: choose profile (3 accounts)
@@ -44,6 +56,16 @@ bindsym $mod+Shift+z exec zapfast quit
 bindsym $mod+e exec exo-open --launch FileManager
 ## quick settings menu
 bindsym $mod+i exec ~/.config/i3/scripts/settings.sh
+
+# --- look: mood and wallpaper (rice --help) ---
+## mood: night -> day -> paper (reading)
+bindsym $mod+t exec ~/.local/bin/rice mode next
+## mood and wallpaper menu
+bindsym $mod+Shift+t exec ~/.local/bin/rice menu
+## wallpaper picker (colours follow the picture)
+bindsym $mod+Control+w exec ~/.local/bin/rice wall pick
+## draw a new mathematical wallpaper
+bindsym $mod+Control+a exec ~/.local/bin/rice art
 
 ## power menu
 bindsym $mod+Escape exec ~/.config/i3/scripts/powermenu.sh
@@ -202,7 +224,8 @@ for_window [class="Xfce4-appearance-settings|Xfce4-settings-manager"] floating e
 exec --no-startup-id ~/.config/i3/scripts/display.sh auto
 exec_always --no-startup-id ~/.config/i3/scripts/autostart.sh
 # Wallpaper + colours once per login; the systemd timer swaps them at 06:00 / 18:00
-exec --no-startup-id ~/dotfiles/wallpaper/wallpaper.sh
+exec --no-startup-id ~/.local/bin/rice apply
+exec --no-startup-id sleep 3 && notify-send -i face-smile "(=^･ω･^=)ﾉ" "welcome back!"
 exec --no-startup-id xss-lock --transfer-sleep-lock -- ~/dotfiles/lockscreen/lock.sh
 exec --no-startup-id /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1
 exec --no-startup-id nm-applet

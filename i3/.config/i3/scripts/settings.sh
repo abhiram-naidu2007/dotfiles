@@ -8,9 +8,10 @@ declare -A CMD=(
   ["󰁹  Power"]="xfce4-power-manager-settings"
   ["󰌌  Keyboard"]="xfce4-keyboard-settings"
   ["󰆍  Open i3 config"]="ghostty -e nvim ~/dotfiles/i3/.config/i3/config"
-  ["󰑓  Re-theme from wallpaper"]="~/dotfiles/wallpaper/wallpaper.sh"
+  ["󰸉  Mood and wallpaper"]="~/.local/bin/rice menu"
+  ["󰑓  Re-theme from wallpaper"]="~/.local/bin/rice apply"
 )
-choice=$(printf '%s\n' "${!CMD[@]}" | sort | rofi -dmenu -i -p "󰒓" -mesg "quick settings" -theme-str 'window {width: 26em;} listview {lines: 8;}')
+choice=$(printf '%s\n' "${!CMD[@]}" | sort | rofi -dmenu -i -p "󰒓" -mesg "quick settings" -theme-str 'window {width: 26em;} listview {lines: 9;}')
 [ -n "$choice" ] || exit 0
 cmd=${CMD[$choice]}
 command -v "${cmd%% *}" >/dev/null || [ "${cmd:0:1}" = "~" ] \

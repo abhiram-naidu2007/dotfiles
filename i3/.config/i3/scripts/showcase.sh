@@ -14,7 +14,7 @@ for c in btop tty-clock fastfetch cal; do
 done
 
 i3-msg "workspace number $WS; append_layout $LAYOUT" >/dev/null
-$T --class=dev.showcase.fetch  -e fish -C 'sleep 0.7; clear; fastfetch' &
+$T --class=dev.showcase.fetch  -e fish -C 'sleep 0.7; clear; pokefetch' &
 $T --class=dev.showcase.clock  --font-size=10 -e fish -C 'sleep 0.7; exec tty-clock -c -s -C 4 -f "%A %d %B"' &
 $T --class=dev.showcase.cal    --font-size=10 -e fish -C 'sleep 0.7; clear; cal -3' &
 $T --class=dev.showcase.btop   --font-size=11 -e btop &
