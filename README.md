@@ -59,7 +59,7 @@ There are two kinds, and `rice pick` (Super+Ctrl+W) shows both in one grid (clic
 - **Normal**: a picture, still. Put yours in `~/Pictures/wallpapers` (any depth) or `wallpaper/`. `rice wall PATH|next|prev|random|auto`.
 - **Live**: a scene drawn by the graphics card, `rice scene NAME|next|none`. Scenes are the `.frag` files in `rice/.local/share/mathwall/scenes/` (linked to `~/.local/share/mathwall/scenes/`) and the built-in ones of the program in `mathwall/`. `rice live on|off|always|toggle` decides whether a live scene moves (off: a still frame of it). It moves only while the workspace is empty, on mains and with the screen on: nothing runs otherwise.
 
-Choosing a picture shows the picture; choosing a live scene turns live on. Changing the mood never changes what is shown.
+**Live or still:** the bar has a live button next to the mood icon (play + "live" = moving, pause + "still" = held, picture icon = a normal wallpaper is shown). Click it to switch; right click opens the picker; the wheel changes live wallpaper. Same on the keyboard: Super+Ctrl+D. In the picker it is the second tile. Choosing a picture shows the picture; choosing a live scene turns live on. Changing the mood never changes what is shown.
 
 | Live scene | What |
 |---|---|
