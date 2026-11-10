@@ -1,0 +1,5 @@
+# How a picture that is not 16:9 is shown whole (see `fitted` in rice/.local/bin/rice).
+# file name (a shell pattern), a tab, a style: extend | reflect | mirror | glow. Default: extend.
+ass_2.jpg	reflect
+lucy.png	extend
+wallhaven-gpd6v7.jpg	extend

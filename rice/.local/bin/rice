@@ -167,23 +167,65 @@ tell_programs() {
 }
 
 # ---- pictures
-# A picture that is not the shape of the screen is shown whole, never cropped: on a blurred,
-# darkened copy of itself that fills the rest. A picture within 3 % of the screen's shape is
-# used as it is (the little that does not fit is trimmed), and so are the day and night pictures
-# in ~/dotfiles/wallpaper. Made once, kept in the cache.
+# A picture that is not the shape of the screen is shown whole, never cropped, and the rest of
+# the screen is made to belong to it. HOW is chosen per picture in ~/dotfiles/rice/.local/share/rice/fit.tsv
+# (file name, a tab, a style; the default is extend):
+#   extend    the edge colours carry on outward, softened: the picture seems to go on past its frame
+#   reflect   (pictures that are too wide) the sky carries on above; below, the picture is mirrored,
+#             fading, like water
+#   mirror    the picture is mirrored beside itself, darker and out of focus, like a hall of mirrors
+#   glow      a blurred, darkened copy of the picture fills the rest
+# A picture within 3 % of the screen's shape is used as it is (the little that does not fit is
+# trimmed), and so are the day and night pictures in ~/dotfiles/wallpaper, which are composed for
+# filling the screen. Made once, kept in the cache.
+fit_style() {
+  local name=${1##*/} pat style
+  while IFS=$'\t' read -r pat style; do
+    case $pat in ''|'#'*) continue ;; esac
+    case $name in $pat) echo "$style"; return ;; esac
+  done < "$DATA/rice/fit.tsv" 2>/dev/null
+  echo extend
+}
 fitted() {
-  local src=$1 size w h iw ih out
-  case "$src" in "$DOT"/wallpaper/*) echo "$src"; return ;; esac   # the day and night pair is composed for filling the screen
+  local src=$1 size w h iw ih out style nw nh gx gy wide
+  [ -f "$src" ] || { echo "$src"; return; }
+  case "$src" in "$DOT"/wallpaper/*) echo "$src"; return ;; esac
   size=$(screen_size); w=${size%x*}; h=${size#*x}
   read -r iw ih < <(magick identify -format '%w %h' "$src[0]" 2>/dev/null)
   [ -n "$iw" ] && [ "$iw" -gt 0 ] && [ "$ih" -gt 0 ] || { echo "$src"; return; }
-  # |iw/ih - w/h| < 3 % of w/h, in integers
-  if [ $(( (iw * h - ih * w) * 100 / (ih * w) )) -ge -3 ] && [ $(( (iw * h - ih * w) * 100 / (ih * w) )) -le 3 ]; then echo "$src"; return; fi
-  out="$CACHE/fit-$size-$(printf '%s' "$src$(stat -c %Y "$src")" | md5sum | cut -c1-12).png"
-  if [ ! -s "$out" ]; then
-    magick "$src[0]" -background black -alpha remove \( +clone -resize "${size}^" -gravity center -extent "$size" -blur 0x28 -brightness-contrast -28x-5 \) \
-      \( -clone 0 -resize "${size}" \) -delete 0 -gravity center -composite "$out.tmp.png" && mv "$out.tmp.png" "$out" || { rm -f "$out.tmp.png"; echo "$src"; return; }
+  local off=$(( (iw * h - ih * w) * 100 / (ih * w) ))
+  if [ "$off" -ge -3 ] && [ "$off" -le 3 ]; then echo "$src"; return; fi
+  style=$(fit_style "$src")
+  out="$CACHE/fit-$size-$style-$(printf '%s' "$src$(stat -c %Y "$src")$(stat -c %Y "$DATA/rice/fit.tsv" 2>/dev/null)" | md5sum | cut -c1-12).png"
+  [ -s "$out" ] && { echo "$out"; return; }
+  if [ "$off" -gt 0 ]; then wide=1; nw=$w; nh=$(( ih * w / iw )); else wide=0; nh=$h; nw=$(( iw * h / ih )); fi
+  local pic="$CACHE/fit.pic.png" bg="$CACHE/fit.bg.png"
+  magick "$src[0]" -background black -alpha remove -resize "${nw}x${nh}!" "$pic" || { echo "$src"; return; }
+  case $style in
+    mirror)
+      if [ $wide = 1 ]; then magick "$pic" \( +clone -flip \) -append \( +clone -flip \) -append -gravity center -crop "${w}x${h}+0+0" +repage "$bg"
+      else magick "$pic" \( +clone -flop \) +append \( +clone -flop \) +append -gravity center -crop "${w}x${h}+0+0" +repage "$bg"; fi
+      magick "$bg" -blur 0x9 -brightness-contrast -38x-8 "$bg" ;;
+    glow)
+      magick "$pic" -resize "${size}^" -gravity center -extent "$size" -blur 0x28 -brightness-contrast -28x-5 "$bg" ;;
+    *)  # extend, reflect: the first and last row (or column) of the picture, stretched over the whole screen
+      if [ $wide = 1 ]; then
+        # top half from the first row, bottom half from the last
+        magick \( "$pic" -gravity north -crop "${nw}x1+0+0" +repage -resize "${w}x$(( h / 2 ))!" \) \
+               \( "$pic" -gravity south -crop "${nw}x1+0+0" +repage -resize "${w}x$(( h - h / 2 ))!" \) -append -blur 0x26 "$bg"
+      else
+        magick \( "$pic" -gravity west -crop "1x${nh}+0+0" +repage -resize "$(( w / 2 ))x${h}!" \) \
+               \( "$pic" -gravity east -crop "1x${nh}+0+0" +repage -resize "$(( w - w / 2 ))x${h}!" \) +append -blur 0x26 "$bg"
+      fi ;;
+  esac
+  gx=$(( (w - nw) / 2 )); gy=$(( (h - nh) / 2 ))
+  if [ "$style" = reflect ] && [ $wide = 1 ]; then
+    # below the picture: itself upside down, fading into the sky colour of the bottom edge
+    magick "$pic" -flip -blur 0x1.4 \( -size "${nw}x${nh}" gradient:'gray(55%)-black' \) -alpha off -compose CopyOpacity -composite "$CACHE/fit.refl.png"
+    magick "$bg" "$CACHE/fit.refl.png" -geometry "+${gx}+$(( gy + nh ))" -composite "$bg"
   fi
+  magick "$bg" "$pic" -geometry "+${gx}+${gy}" -composite "$out.tmp.png" && mv "$out.tmp.png" "$out" || { rm -f "$out.tmp.png"; echo "$src"; return; }
+  rm -f "$pic" "$bg" "$CACHE/fit.refl.png"
   echo "$out"
 }
 
