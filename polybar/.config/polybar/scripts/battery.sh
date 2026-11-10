@@ -1,5 +1,6 @@
 #!/bin/bash
-# Battery for polybar. Charging = bolt + green, on AC but full = plug, else level icon.
+# Battery for polybar, drawn as a hit-point bar: HP ━━━━━━━━ 72%
+# The bar is green above half, yellow below, red under a fifth. Charging = bolt, on AC but full = plug.
 # Reads sysfs directly, so it never claims "charging" unless the kernel does.
 PS=/sys/class/power_supply
 bat=$(ls -d $PS/BAT* 2>/dev/null | head -1); [ -z "$bat" ] && exit 0
@@ -8,10 +9,10 @@ ac=0; for f in $PS/*/online; do [ -r "$f" ] && [ "$(<"$f")" = 1 ] && ac=1; done
 
 # one pass over colors.ini (no per-colour subprocesses)
 while IFS=' =' read -r k v; do
-    case $k in ok) OK=$v ;; warn) WARN=$v ;; crit) CRIT=$v ;; accent) ACC=$v ;; dim) DIM=$v ;; esac
+    case $k in ok) OK=$v ;; warn) WARN=$v ;; crit) CRIT=$v ;; accent) ACC=$v ;; dim) DIM=$v ;; surface2) EMPTY=$v ;; esac
 done < "$HOME/.config/polybar/colors.ini"
 
-# icon in font 2 (the larger icon font), coloured; value in the bar's text colour
+# fallback when the kernel reports no percentage: icon in font 2, coloured; value in the bar's text colour
 out() { printf '%%{T2}%%{F%s}%s%%{F-}%%{T-} %s\n' "$1" "$2" "$3"; }
 
 # Percentage = charge now / what the pack holds today (energy_full), same as the
@@ -40,15 +41,12 @@ else out "$DIM" "󰂑" "?"; exit 0; fi
 [ "$cap" -gt 100 ] && cap=100
 [ "$status" = Full ] && cap=100
 
-lv=(󰁺 󰁻 󰁼 󰁽 󰁾 󰁿 󰂀 󰂁 󰂂 󰁹)
-ch=(󰢜 󰂆 󰂇 󰂈 󰢝 󰂉 󰢞 󰂊 󰂋 󰂅)
-i=$(( cap / 10 )); [ $i -gt 9 ] && i=9
-
-if [ "$status" = Charging ]; then
-    out "$OK" "${ch[$i]}" "$cap%"
-elif [ "$ac" = 1 ]; then                      # plugged in, not charging (full / limit)
-    out "$OK" "󰚥" "$cap%"
-else
-    col=$ACC; [ "$cap" -lt 30 ] && col=$WARN; [ "$cap" -lt 15 ] && col=$CRIT
-    out "$col" "${lv[$i]}" "$cap%"
-fi
+# eight segments; a nearly empty pack still shows one
+col=$OK; [ "$cap" -lt 50 ] && col=$WARN; [ "$cap" -lt 20 ] && col=$CRIT
+seg=$(( (cap + 6) / 12 )); [ $seg -gt 8 ] && seg=8; [ $seg -lt 1 ] && seg=1
+full=━━━━━━━━
+bar="%{F$col}${full:0:seg}%{F$EMPTY}${full:seg}%{F-}"
+icon=
+if [ "$status" = Charging ]; then icon="%{T2}%{F$OK}󱐋%{F-}%{T-}"
+elif [ "$ac" = 1 ]; then icon="%{T2}%{F$OK}󰚥%{F-}%{T-}"; fi
+printf '%s%%{T3}%%{F%s}HP%%{F-}%%{T-} %s %s%%\n' "${icon:+$icon }" "$col" "$bar" "$cap"
