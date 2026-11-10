@@ -169,9 +169,11 @@ tell_programs() {
 # ---- pictures
 # A picture that is not the shape of the screen is shown whole, never cropped: on a blurred,
 # darkened copy of itself that fills the rest. A picture within 3 % of the screen's shape is
-# used as it is (the little that does not fit is trimmed). Made once, kept in the cache.
+# used as it is (the little that does not fit is trimmed), and so are the day and night pictures
+# in ~/dotfiles/wallpaper. Made once, kept in the cache.
 fitted() {
   local src=$1 size w h iw ih out
+  case "$src" in "$DOT"/wallpaper/*) echo "$src"; return ;; esac   # the day and night pair is composed for filling the screen
   size=$(screen_size); w=${size%x*}; h=${size#*x}
   read -r iw ih < <(magick identify -format '%w %h' "$src[0]" 2>/dev/null)
   [ -n "$iw" ] && [ "$iw" -gt 0 ] && [ "$ih" -gt 0 ] || { echo "$src"; return; }
