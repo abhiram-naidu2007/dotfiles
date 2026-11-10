@@ -167,13 +167,32 @@ tell_programs() {
 }
 
 # ---- pictures
+# A picture that is not the shape of the screen is shown whole, never cropped: on a blurred,
+# darkened copy of itself that fills the rest. A picture within 3 % of the screen's shape is
+# used as it is (the little that does not fit is trimmed). Made once, kept in the cache.
+fitted() {
+  local src=$1 size w h iw ih out
+  size=$(screen_size); w=${size%x*}; h=${size#*x}
+  read -r iw ih < <(magick identify -format '%w %h' "$src[0]" 2>/dev/null)
+  [ -n "$iw" ] && [ "$iw" -gt 0 ] && [ "$ih" -gt 0 ] || { echo "$src"; return; }
+  # |iw/ih - w/h| < 3 % of w/h, in integers
+  if [ $(( (iw * h - ih * w) * 100 / (ih * w) )) -ge -3 ] && [ $(( (iw * h - ih * w) * 100 / (ih * w) )) -le 3 ]; then echo "$src"; return; fi
+  out="$CACHE/fit-$size-$(printf '%s' "$src$(stat -c %Y "$src")" | md5sum | cut -c1-12).png"
+  if [ ! -s "$out" ]; then
+    magick "$src[0]" -background black -alpha remove \( +clone -resize "${size}^" -gravity center -extent "$size" -blur 0x28 -brightness-contrast -28x-5 \) \
+      \( -clone 0 -resize "${size}" \) -delete 0 -gravity center -composite "$out.tmp.png" && mv "$out.tmp.png" "$out" || { rm -f "$out.tmp.png"; echo "$src"; return; }
+  fi
+  echo "$out"
+}
+
 # The wallpaper as it would look printed: grey levels mapped from ink to paper.
 paper_wall() {
   local src=$1 out
+  src=$(fitted "$src")
   out="$CACHE/paper-$(printf '%s' "$src$(stat -c %Y "$src")" | md5sum | cut -c1-12).png"
   if [ ! -s "$out" ]; then
     . "$HOME/.cache/theme/colors.sh"
-    magick "$src" -resize 1920x1080^ -gravity center -extent 1920x1080 -colorspace Gray \
+    magick "$src" -colorspace Gray \
       -sigmoidal-contrast 3x55% +level-colors "$fg","$bg" "$out.tmp.png" && mv "$out.tmp.png" "$out"
   fi
   echo "$out"
@@ -238,7 +257,7 @@ apply() {
 
   # what the desktop shows while nothing moves: the picture (printed in ink on paper), or one frame of the drawing
   if [ "$kind" = picture ]; then
-    shown=$still
+    shown=$(fitted "$still")
     [ "$mode" = paper ] && shown=$(paper_wall "$still")
     [ "$scene" != picture ] && { picture_prepare "$shown" & pic_job=$!; }
   else
