@@ -93,6 +93,10 @@ user() {
   run xdg-mime default nvim-ghostty.desktop text/plain text/markdown text/x-python text/x-csrc text/x-chdr text/x-c++src text/x-c++hdr \
     text/x-rust text/x-lua text/x-tex text/x-makefile text/x-shellscript application/x-shellscript application/json application/toml \
     application/x-yaml text/css text/x-log
+  # Thorium flags hold absolute extension paths
+  if [ "$DRY" = 0 ]; then
+    sed "s|@HOME@|$HOME|g" "$DOT/thorium/thorium-flags.conf.in" > ~/.config/thorium/thorium-flags.conf
+  fi
   # btop: the generated palette, on the terminal's own background
   if [ -f ~/.config/btop/btop.conf ]; then
     run sed -i 's/^color_theme = .*/color_theme = "rice"/; s/^theme_background = .*/theme_background = false/' ~/.config/btop/btop.conf
