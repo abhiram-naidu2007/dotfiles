@@ -218,7 +218,9 @@ bindsym $mod+F5 exec --no-startup-id ~/.config/i3/scripts/osd.sh bri down
 bindsym $mod+F6 exec --no-startup-id ~/.config/i3/scripts/osd.sh bri up
 
 # --- limusic: scratchpad toggle + direct MPRIS control (launched on demand) ---
-for_window [class="(?i)limusic"] floating enable, resize set 1100 700, move position center, move scratchpad
+for_window [class="(?i)limusic" title="^Limusic$"] floating enable, resize set 1100 700, move position center, move scratchpad
+# its other windows (Google sign-in) stay on screen
+for_window [class="(?i)limusic" title="^(?!Limusic$)"] floating enable, move position center
 ## music: show / hide limusic
 bindsym $mod+m exec --no-startup-id ~/.config/i3/scripts/limusic-toggle.sh
 ## music: previous / play-pause / next (F8 F9 F10)

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Toggle limusic scratchpad. Launch on demand (no autostart = no idle RAM).
-SEL='[class="(?i)limusic"]'
+SEL='[class="(?i)limusic" title="^Limusic$"]'
 if ! pgrep -x limusic-app >/dev/null; then
     setsid "$HOME/.local/bin/limusic.AppImage" >/dev/null 2>&1 &
     i=0
