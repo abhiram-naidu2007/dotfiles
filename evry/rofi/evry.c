@@ -344,6 +344,12 @@ static char *evry_display(const Mode *sw, unsigned int index, int *state, G_GNUC
     return get_entry ? g_strdup(((Row *)g_ptr_array_index(pd->rows, index))->text) : NULL;
 }
 
+// Rofi scores rows against this text when sorting is on. Every row gets the same
+// empty text, so the order the helper chose stays.
+static char *evry_completion(G_GNUC_UNUSED const Mode *sw, G_GNUC_UNUSED unsigned int index) {
+    return g_strdup("");
+}
+
 static cairo_surface_t *evry_icon(const Mode *sw, unsigned int index, unsigned int height) {
     const Priv *pd = mode_get_private_data(sw);
     if (index >= pd->rows->len) {
@@ -427,6 +433,7 @@ Mode mode = {
     ._get_display_value = evry_display,
     ._get_icon = evry_icon,
     ._get_message = evry_message,
+    ._get_completion = evry_completion,
     ._preprocess_input = evry_preprocess,
     .type = MODE_TYPE_SWITCHER,
 };

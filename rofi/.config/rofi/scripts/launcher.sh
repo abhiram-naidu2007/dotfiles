@@ -29,7 +29,7 @@ esc() { local s=$1; s=${s//&/\&amp;}; s=${s//</\&lt;}; s=${s//>/\&gt;}; printf %
 caption="<b>$(esc "${formula:-(=^･ω･^=)}")</b>&#10;<span size='small' alpha='70%'>$(esc "$name")</span>"
 
 # XDG_CURRENT_DESKTOP=XFCE: also list the XFCE settings apps
-exec env ROFI_PLUGIN_PATH="$LIB" XDG_CURRENT_DESKTOP=XFCE rofi -no-sort -matching $match \
+exec env ROFI_PLUGIN_PATH="$LIB" XDG_CURRENT_DESKTOP=XFCE rofi -sort -sorting-method fzf -matching $match \
   -modes "$modes" -show "$show" -theme launcher ${filter:+-filter "$filter"} \
   -kb-custom-1 "Control+y" -kb-custom-2 "Control+t" -kb-custom-3 "Control+o" \
   -theme-str "textbox-caption { content: \"$caption\"; }"
