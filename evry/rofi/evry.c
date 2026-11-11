@@ -87,9 +87,9 @@ static char *state_file(const char *name) {
     return g_build_filename(g_get_user_state_dir(), "rice", name, NULL);
 }
 
-// One line of "evry --tsv": kind \t path \t size \t age \t bytes
+// One line of "evry --tsv": kind \t path \t size \t age \t bytes \t ("~" for a loose match)
 static Row *file_row(char *line) {
-    char **f = g_strsplit(line, "\t", 5);
+    char **f = g_strsplit(line, "\t", 6);
     if (g_strv_length(f) < 4) {
         g_strfreev(f);
         return NULL;
@@ -106,8 +106,9 @@ static Row *file_row(char *line) {
         dir = tilde;
     }
     char *ename = escape(name), *edir = escape(dir);
-    char *text = is_dir ? g_strdup_printf("<b>%s</b>\n" SMALL "%s  ·  folder  ·  %s</span>", ename, edir, f[3])
-                        : g_strdup_printf("%s\n" SMALL "%s  ·  %s  ·  %s</span>", ename, edir, f[2], f[3]);
+    const char *loose = f[4] && f[5] && f[5][0] == '~' ? "~  " : "";  // similar name, not exact
+    char *text = is_dir ? g_strdup_printf("<b>%s</b>\n" SMALL "%s%s  ·  folder  ·  %s</span>", ename, loose, edir, f[3])
+                        : g_strdup_printf("%s\n" SMALL "%s%s  ·  %s  ·  %s</span>", ename, loose, edir, f[2], f[3]);
 
     char *icon = NULL, *fallback = NULL;
     if (is_dir) {

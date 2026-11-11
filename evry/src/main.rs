@@ -503,6 +503,63 @@ fn mark(blob: &[u8], off: &[u32], needle: &[u8], bit: u16, own: &mut [u16]) {
 struct Hit {
     score: i64,
     idx: u32,
+    fuzzy: bool,
+}
+
+/// Exact search that finds fewer rows than this triggers the fuzzy fallback.
+const FEW: usize = 10;
+/// Shortest word that may match loosely; shorter ones match half the disk.
+const FUZZY_MIN: usize = 3;
+
+fn is_sep(b: u8) -> bool {
+    matches!(b, b'-' | b'_' | b'.' | b' ' | b'(' | b'[')
+}
+
+/// Loose match of `needle` as letters in order inside one file name. The first
+/// letter must open a word (start, after - _ . space, or a camelCase hump), so
+/// "ctlcfg" finds controller_config but "ler" does not find controller.
+/// `orig` has the real case (for the humps), `low` is folded, `cmp` is what is compared.
+fn fuzzy_score(orig: &[u8], cmp: &[u8], needle: &[u8]) -> Option<i64> {
+    let m = needle.len();
+    if cmp.len() < m {
+        return None;
+    }
+    let boundary = |p: usize| p == 0 || is_sep(orig[p - 1]) || (orig[p].is_ascii_uppercase() && orig[p - 1].is_ascii_lowercase());
+    let mut best: Option<i64> = None;
+    let mut starts = 0;
+    let mut from = 0;
+    while let Some(rel) = memchr::memchr(needle[0], &cmp[from..]) {
+        let p = from + rel;
+        from = p + 1;
+        if !boundary(p) {
+            continue;
+        }
+        starts += 1;
+        let (mut prev, mut score, mut ok) = (p, 0i64, true);
+        for &c in &needle[1..] {
+            match memchr::memchr(c, &cmp[prev + 1..]) {
+                Some(r) => {
+                    let q = prev + 1 + r;
+                    score += if q == prev + 1 { 10 } else { -((q - prev - 1).min(6) as i64) };
+                    if boundary(q) {
+                        score += 6;
+                    }
+                    prev = q;
+                }
+                None => {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if ok && prev - p < m * 4 + 4 {
+            best = Some(best.map_or(score, |b| b.max(score)));
+        }
+        if starts >= 4 {
+            break;
+        }
+    }
+    best
 }
 
 fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, u64)>) -> Vec<Hit> {
@@ -602,7 +659,7 @@ fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, 
             };
             s
         };
-        hits.push(Hit { score, idx: i as u32 });
+        hits.push(Hit { score, idx: i as u32, fuzzy: false });
     }
 
     let order = |a: &Hit, b: &Hit| b.score.cmp(&a.score).then(mtime[b.idx as usize].cmp(&mtime[a.idx as usize]));
@@ -626,6 +683,57 @@ fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, 
     }
     hits.sort_unstable_by(order);
     hits.truncate(limit);
+
+    // Too few exact hits: add loose matches below them, never above.
+    let loose = !browse && hits.len() < FEW && q.terms.iter().filter(|t| t.bit & q.norm != 0).all(|t| t.needle.len() >= FUZZY_MIN);
+    if loose && hits.len() < limit {
+        let seen: std::collections::HashSet<u32> = hits.iter().map(|h| h.idx).collect();
+        let mut more: Vec<Hit> = Vec::new();
+        for i in 1..n {
+            if acc[parent[i] as usize] & q.anc != q.anc || seen.contains(&(i as u32)) {
+                continue;
+            }
+            let f = flags[i];
+            if q.want_dir.is_some_and(|d| d != (f & F_DIR != 0)) || q.want_home.is_some_and(|h| h != (f & F_HOME != 0)) {
+                continue;
+            }
+            let (a, b) = (off[i] as usize, off[i + 1] as usize - 1);
+            let lname = &lower[a..b];
+            if !q.exts.is_empty() {
+                match memchr::memrchr(b'.', lname) {
+                    Some(dot) if f & F_DIR == 0 && q.exts.iter().any(|e| e == &lname[dot + 1..]) => {}
+                    _ => continue,
+                }
+            }
+            let mut s = 0i64;
+            let mut all = true;
+            for t in q.terms.iter().filter(|t| t.bit & q.norm != 0) {
+                let cmp = if t.case_sensitive { &names[a..b] } else { lname };
+                match fuzzy_score(&names[a..b], cmp, &t.needle) {
+                    Some(v) => s += v + 10 * t.needle.len() as i64,
+                    None => {
+                        all = false;
+                        break;
+                    }
+                }
+            }
+            if !all {
+                continue;
+            }
+            s -= (lname.len() as i64).min(60) / 2 + depth[i] as i64 * 2;
+            let tidy_home = f & (F_HOME | F_HIDDEN | F_JUNK) == F_HOME;
+            s += if f & F_JUNK != 0 { -60 } else if tidy_home { 90 } else if f & F_HOME != 0 { 40 } else { -30 };
+            s += match now - mtime[i] as i64 {
+                a if a < 7 * 86_400 => 30,
+                a if a < 365 * 86_400 => 8,
+                _ => 0,
+            };
+            more.push(Hit { score: s, idx: i as u32, fuzzy: true });
+        }
+        more.sort_unstable_by(order);
+        more.truncate(limit - hits.len());
+        hits.extend(more);
+    }
     hits
 }
 
@@ -800,7 +908,7 @@ fn cmd_query(args: &[String]) -> io::Result<()> {
         } else if tsv {
             out.write_all(if dir { b"d\t" } else if flags[i] & F_LINK != 0 { b"l\t" } else { b"f\t" })?;
             out.write_all(&path)?;
-            writeln!(out, "\t{sz}\t{age}\t{}", size[i])?;
+            writeln!(out, "\t{sz}\t{age}\t{}\t{}", size[i], if h.fuzzy { "~" } else { "" })?;
         } else {
             let shown: Vec<u8> = match path.strip_prefix(&home[..]) {
                 Some(rest) if rest.first() == Some(&b'/') || rest.is_empty() => [&b"~"[..], rest].concat(),
@@ -808,7 +916,7 @@ fn cmd_query(args: &[String]) -> io::Result<()> {
             };
             let cut = memchr::memrchr(b'/', &shown).map(|p| p + 1).unwrap_or(0);
             if color {
-                write!(out, "\x1b[2m{age:>4} {sz:>7}  ")?;
+                write!(out, "\x1b[2m{age:>4} {sz:>7} {} ", if h.fuzzy { "~" } else { " " })?;
                 out.write_all(&shown[..cut])?;
                 out.write_all(if dir { b"\x1b[0;1;34m" } else { b"\x1b[0;1m" })?;
                 out.write_all(&shown[cut..])?;

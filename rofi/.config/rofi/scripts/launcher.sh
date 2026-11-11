@@ -4,14 +4,14 @@
 #   docs = the Files tab already filtered to PDFs, newest first: the reading list.
 # Ctrl+Tab / Shift+Left/Right change tab and keep what you typed.
 LIB="$HOME/.local/lib/rofi"
-show=drun filter=
+show=drun filter= match=fuzzy   # fuzzy: ffx finds Firefox, sysmon System Monitor
 case "${1:-apps}" in
   files)   show=files ;;
   docs)    show=files; filter="pdf: " ;;
   web)     show=web ;;
   calc)    show=calc ;;
   windows) show=window ;;
-  keys)    show=help; [ -n "$2" ] && filter="$2 " ;;
+  keys)    show=help; match=normal; [ -n "$2" ] && filter="$2 " ;;
 esac
 WEB="web:$HOME/.config/rofi/scripts/web.sh"
 KEYS="help:$HOME/.config/rofi/scripts/keys.sh"
@@ -29,7 +29,7 @@ esc() { local s=$1; s=${s//&/\&amp;}; s=${s//</\&lt;}; s=${s//>/\&gt;}; printf %
 caption="<b>$(esc "${formula:-(=^･ω･^=)}")</b>&#10;<span size='small' alpha='70%'>$(esc "$name")</span>"
 
 # XDG_CURRENT_DESKTOP=XFCE: also list the XFCE settings apps
-exec env ROFI_PLUGIN_PATH="$LIB" XDG_CURRENT_DESKTOP=XFCE rofi -no-sort \
+exec env ROFI_PLUGIN_PATH="$LIB" XDG_CURRENT_DESKTOP=XFCE rofi -no-sort -matching $match \
   -modes "$modes" -show "$show" -theme launcher ${filter:+-filter "$filter"} \
   -kb-custom-1 "Control+y" -kb-custom-2 "Control+t" -kb-custom-3 "Control+o" \
   -theme-str "textbox-caption { content: \"$caption\"; }"
