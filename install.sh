@@ -53,6 +53,7 @@ build() {
   run make -C "$DOT/evry" install      # ~/.local/bin/evry, ~/.local/lib/rofi/{files,calc}.so
   run make -C "$DOT/mochi" install     # ~/.local/bin/mochi
   run make -C "$DOT/mathwall" install  # ~/.local/bin/mathwall (live wallpaper)
+  run make -C "$DOT/limusic" install   # ~/.local/lib/limusic-rice/rice.so (limusic in the desktop colours)
   run "$HOME/.local/bin/evry" index
   # Neovim: Python language server and debugger through uv; the rest installs itself on first start
   command -v basedpyright-langserver >/dev/null || run uv tool install basedpyright

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Limusic
+GenericName=Music player
+Comment=YouTube Music, in the desktop's colours
+Exec=sh -c "\\$HOME/.config/i3/scripts/limusic-toggle.sh"
+Icon=limusic
+Categories=AudioVideo;Audio;Player;
+Keywords=music;youtube;songs;
+StartupNotify=false

@@ -44,6 +44,9 @@ Each step is idempotent. `link` moves any clashing file to `.backup/<date>/` fir
 
 `evry/rofi/evry.c` builds two rofi modes (`files.so`, `calc.so`) that ask a helper on every keystroke and replace the list when it answers.
 
+## Music (`limusic/`)
+Super+M shows or hides limusic (YouTube Music), started on first use. `limusic/rice.so` is preloaded into it and adds a stylesheet (`theme/templates/limusic-css`) that maps the mood's palette onto limusic's own colour variables: frosted glass, the launcher's gradient on the play button and seek bar, Inter and JetBrains Mono. The stylesheet is watched, so a mood change restyles it live; it applies only to limusic's own page, never to the Google sign-in. Its WebKit renders on the Intel GPU: on NVIDIA's EGL it crashed whenever the window was shown or hidden.
+
 ## Moods (`rice mode night|day|paper|next`)
 | Mood | Base | Extra |
 |---|---|---|
