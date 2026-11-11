@@ -297,7 +297,7 @@ fn build_index(s: &Settings) -> io::Result<(usize, PathBuf)> {
         return Err(io::Error::other("name table over 4 GiB"));
     }
     b.off.push(b.names.len() as u32);
-    let lower = b.names.to_ascii_lowercase();
+    let lower = fold(&b.names);
 
     let path = index_path();
     if let Some(dir) = path.parent() {
@@ -481,7 +481,7 @@ impl Query {
         }
         self.terms.push(Term {
             needle: text.as_bytes().to_vec(),
-            case_sensitive: text.bytes().any(|b| b.is_ascii_uppercase()),
+            case_sensitive: text.chars().any(char::is_uppercase),
             bit,
         });
     }
@@ -506,60 +506,95 @@ struct Hit {
     fuzzy: bool,
 }
 
-/// Exact search that finds fewer rows than this triggers the fuzzy fallback.
-const FEW: usize = 10;
-/// Shortest word that may match loosely; shorter ones match half the disk.
+const FEW: usize = 10; // fewer exact hits than this: add loose ones
 const FUZZY_MIN: usize = 3;
+const FUZZY_MAX: usize = 20;
 
 fn is_sep(b: u8) -> bool {
     matches!(b, b'-' | b'_' | b'.' | b' ' | b'(' | b'[')
 }
 
-/// Loose match of `needle` as letters in order inside one file name. The first
-/// letter must open a word (start, after - _ . space, or a camelCase hump), so
-/// "ctlcfg" finds controller_config but "ler" does not find controller.
-/// `orig` has the real case (for the humps), `low` is folded, `cmp` is what is compared.
-fn fuzzy_score(orig: &[u8], cmp: &[u8], needle: &[u8]) -> Option<i64> {
-    let m = needle.len();
-    if cmp.len() < m {
-        return None;
-    }
-    let boundary = |p: usize| p == 0 || is_sep(orig[p - 1]) || (orig[p].is_ascii_uppercase() && orig[p - 1].is_ascii_lowercase());
-    let mut best: Option<i64> = None;
-    let mut starts = 0;
-    let mut from = 0;
-    while let Some(rel) = memchr::memchr(needle[0], &cmp[from..]) {
-        let p = from + rel;
-        from = p + 1;
-        if !boundary(p) {
-            continue;
-        }
-        starts += 1;
-        let (mut prev, mut score, mut ok) = (p, 0i64, true);
-        for &c in &needle[1..] {
-            match memchr::memchr(c, &cmp[prev + 1..]) {
-                Some(r) => {
-                    let q = prev + 1 + r;
-                    score += if q == prev + 1 { 10 } else { -((q - prev - 1).min(6) as i64) };
-                    if boundary(q) {
-                        score += 6;
-                    }
-                    prev = q;
-                }
-                None => {
-                    ok = false;
-                    break;
+/// Lowercase without changing any byte offset: ASCII, plus every letter whose
+/// lowercase form has the same UTF-8 length (É -> é). Invalid UTF-8 is kept.
+fn fold(s: &[u8]) -> Vec<u8> {
+    let mut out = s.to_ascii_lowercase();
+    let mut i = 0;
+    while let Some(p) = out[i..].iter().position(|&b| b >= 0xc0) {
+        i += p;
+        let w = match out[i] { 0xc0..=0xdf => 2, 0xe0..=0xef => 3, _ => 4 };
+        if let Some(c) = out.get(i..i + w).and_then(|b| std::str::from_utf8(b).ok()).and_then(|t| t.chars().next()) {
+            let mut lc = c.to_lowercase();
+            if let (Some(l), None) = (lc.next(), lc.next()) {
+                if l.len_utf8() == w {
+                    l.encode_utf8(&mut out[i..i + w]);
                 }
             }
         }
-        if ok && prev - p < m * 4 + 4 {
-            best = Some(best.map_or(score, |b| b.max(score)));
-        }
-        if starts >= 4 {
-            break;
+        i += 1;
+    }
+    out
+}
+
+/// Letters of `needle` in order inside `low`; the first one must open a word of
+/// `name` (start, after a separator, or a camelCase hump).
+fn fuzzy_score(name: &[u8], low: &[u8], needle: &[u8]) -> Option<i64> {
+    let m = needle.len();
+    if low.len() < m {
+        return None;
+    }
+    let word = |p: usize| p == 0 || is_sep(name[p - 1]) || (name[p].is_ascii_uppercase() && name[p - 1].is_ascii_lowercase());
+    let mut best = None;
+    for p in memchr::memchr_iter(needle[0], low).filter(|&p| word(p)).take(4) {
+        let (mut at, mut s) = (p, 0i64);
+        let found = needle[1..].iter().all(|&c| match memchr::memchr(c, &low[at + 1..]) {
+            Some(gap) => {
+                at += 1 + gap;
+                s += if gap == 0 { 10 } else { -(gap.min(6) as i64) } + if word(at) { 6 } else { 0 };
+                true
+            }
+            None => false,
+        });
+        if found && at - p < 4 * m + 4 {
+            best = best.max(Some(s));
         }
     }
     best
+}
+
+impl Query {
+    fn admits(&self, f: u8, lname: &[u8]) -> bool {
+        self.want_dir.is_none_or(|d| d == (f & F_DIR != 0))
+            && self.want_home.is_none_or(|h| h == (f & F_HOME != 0))
+            && (self.exts.is_empty()
+                || f & F_DIR == 0 && memchr::memrchr(b'.', lname).is_some_and(|d| self.exts.iter().any(|e| e[..] == lname[d + 1..])))
+    }
+}
+
+/// Where an entry lives and how fresh it is.
+fn place(f: u8, len: usize, depth: u8, age: i64) -> i64 {
+    let tidy = f & (F_HOME | F_HIDDEN | F_JUNK) == F_HOME;
+    let at = if f & F_JUNK != 0 { -60 } else if tidy { 90 } else if f & F_HOME != 0 { 40 } else { -30 };
+    let fresh = match age {
+        a if a < 86_400 => 40,
+        a if a < 7 * 86_400 => 30,
+        a if a < 30 * 86_400 => 20,
+        a if a < 365 * 86_400 => 8,
+        _ => 0,
+    };
+    at + fresh + if f & F_DIR != 0 { 12 } else { 0 } - (len.min(60) / 2) as i64 - 2 * depth as i64
+}
+
+fn exact_score(name: &[u8], needle: &[u8]) -> i64 {
+    let m = needle.len();
+    100 + if name.len() == m {
+        120
+    } else if name.starts_with(needle) {
+        if name[m] == b'.' { 100 } else { 50 }
+    } else if memmem::find(name, needle).is_some_and(|p| is_sep(name[p - 1])) {
+        25
+    } else {
+        0
+    }
 }
 
 fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, u64)>) -> Vec<Hit> {
@@ -567,6 +602,7 @@ fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, 
     let (parent, flags, depth, mtime, off) = (ix.parent(), ix.flags(), ix.depth(), ix.mtime(), ix.off());
     let (names, lower) = (ix.names(), ix.lower());
     let now = now() as i64;
+    let span = |i: usize| off[i] as usize..off[i + 1] as usize - 1;
 
     let mut own = vec![0u16; n];
     for t in &q.terms {
@@ -575,89 +611,34 @@ fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, 
 
     let browse = q.norm == 0; // no plain word: newest first
     let unfiltered = q.terms.is_empty() && q.exts.is_empty() && q.want_dir.is_none() && q.want_home.is_none();
+    let words = || q.terms.iter().filter(|t| t.bit & q.norm != 0);
     let mut acc = vec![0u16; n];
     acc[0] = own[0];
     let mut hits: Vec<Hit> = Vec::new();
     for i in 1..n {
-        let above = acc[parent[i] as usize];
-        let me = own[i];
+        let (above, me) = (acc[parent[i] as usize], own[i]);
         acc[i] = above | me;
         if (me | above) & q.norm != q.norm || above & q.anc != q.anc || (!browse && me & q.norm == 0) {
             continue;
         }
-        let f = flags[i];
-        if let Some(d) = q.want_dir {
-            if d != (f & F_DIR != 0) {
-                continue;
-            }
+        let (f, lname) = (flags[i], &lower[span(i)]);
+        if !q.admits(f, lname) {
+            continue;
         }
-        if let Some(h) = q.want_home {
-            if h != (f & F_HOME != 0) {
-                continue;
-            }
-        }
-        let lname = &lower[off[i] as usize..off[i + 1] as usize - 1];
-        if !q.exts.is_empty() {
-            let ext = match memchr::memrchr(b'.', lname) {
-                Some(dot) if f & F_DIR == 0 => &lname[dot + 1..],
-                _ => continue,
-            };
-            if !q.exts.iter().any(|e| e == ext) {
-                continue;
-            }
-        }
-        let tidy_home = f & (F_HOME | F_HIDDEN | F_JUNK) == F_HOME;
-        if unfiltered && (!tidy_home || f & F_DIR != 0) {
+        let tidy = f & (F_HOME | F_HIDDEN | F_JUNK) == F_HOME;
+        if unfiltered && (!tidy || f & F_DIR != 0) {
             continue; // empty query: recently changed files of mine
         }
-        let age = now - mtime[i] as i64;
         let score = if browse {
-            mtime[i] as i64 + if tidy_home { 1 << 40 } else { 0 }
+            mtime[i] as i64 + if tidy { 1 << 40 } else { 0 }
         } else {
-            let mut s = 0i64;
-            for t in &q.terms {
-                if t.bit & q.norm == 0 {
-                    continue;
-                }
-                if me & t.bit == 0 {
-                    s += 8; // matched only by a folder above
-                    continue;
-                }
-                s += 100;
-                let name = if t.case_sensitive { &names[off[i] as usize..off[i + 1] as usize - 1] } else { lname };
-                let m = t.needle.len();
-                if name.len() == m {
-                    s += 120; // the whole name
-                } else if name.starts_with(&t.needle) {
-                    s += if name[m] == b'.' { 100 } else { 50 }; // whole stem / prefix
-                } else if let Some(p) = memmem::find(name, &t.needle) {
-                    if matches!(name[p - 1], b'-' | b'_' | b'.' | b' ') {
-                        s += 25; // start of a word
-                    }
-                }
-            }
-            s -= (lname.len() as i64).min(60) / 2;
-            s -= depth[i] as i64 * 2;
-            s += if f & F_JUNK != 0 {
-                -60
-            } else if tidy_home {
-                90
-            } else if f & F_HOME != 0 {
-                40 // dotfiles: hidden, but mine
-            } else {
-                -30
-            };
-            if f & F_DIR != 0 {
-                s += 12;
-            }
-            s += match age {
-                a if a < 86_400 => 40,
-                a if a < 7 * 86_400 => 30,
-                a if a < 30 * 86_400 => 20,
-                a if a < 365 * 86_400 => 8,
-                _ => 0,
-            };
-            s
+            words()
+                .map(|t| match me & t.bit {
+                    0 => 8, // matched only by a folder above
+                    _ => exact_score(if t.case_sensitive { &names[span(i)] } else { lname }, &t.needle),
+                })
+                .sum::<i64>()
+                + place(f, lname.len(), depth[i], now - mtime[i] as i64)
         };
         hits.push(Hit { score, idx: i as u32, fuzzy: false });
     }
@@ -684,55 +665,25 @@ fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, 
     hits.sort_unstable_by(order);
     hits.truncate(limit);
 
-    // Too few exact hits: add loose matches below them, never above.
-    let loose = !browse && hits.len() < FEW && q.terms.iter().filter(|t| t.bit & q.norm != 0).all(|t| t.needle.len() >= FUZZY_MIN);
-    if loose && hits.len() < limit {
-        let seen: std::collections::HashSet<u32> = hits.iter().map(|h| h.idx).collect();
-        let mut more: Vec<Hit> = Vec::new();
-        let lows: Vec<Vec<u8>> = q.terms.iter().map(|t| t.needle.to_ascii_lowercase()).collect();
+    // Few exact hits: loose ones go below them, case ignored.
+    if !browse && hits.len() < FEW.min(limit) && words().all(|t| t.needle.len() >= FUZZY_MIN) {
+        let loose: Vec<Vec<u8>> = words().map(|t| fold(&t.needle)).collect();
+        let mut more = Vec::new();
         for i in 1..n {
-            if acc[parent[i] as usize] & q.anc != q.anc || seen.contains(&(i as u32)) {
+            let (f, lname) = (flags[i], &lower[span(i)]);
+            if acc[parent[i] as usize] & q.anc != q.anc || !q.admits(f, lname) {
                 continue;
             }
-            let f = flags[i];
-            if q.want_dir.is_some_and(|d| d != (f & F_DIR != 0)) || q.want_home.is_some_and(|h| h != (f & F_HOME != 0)) {
+            let name = &names[span(i)];
+            let Some(s) = loose.iter().map(|w| fuzzy_score(name, lname, w).map(|v| v + 10 * w.len() as i64)).sum::<Option<i64>>() else {
                 continue;
-            }
-            let (a, b) = (off[i] as usize, off[i + 1] as usize - 1);
-            let lname = &lower[a..b];
-            if !q.exts.is_empty() {
-                match memchr::memrchr(b'.', lname) {
-                    Some(dot) if f & F_DIR == 0 && q.exts.iter().any(|e| e == &lname[dot + 1..]) => {}
-                    _ => continue,
-                }
-            }
-            let mut s = 0i64;
-            let mut all = true;
-            for (ti, t) in q.terms.iter().enumerate().filter(|(_, t)| t.bit & q.norm != 0) {
-                // Loose matching ignores case: a capital that finds nothing exact still finds the name.
-                match fuzzy_score(&names[a..b], lname, &lows[ti]) {
-                    Some(v) => s += v + 10 * t.needle.len() as i64,
-                    None => {
-                        all = false;
-                        break;
-                    }
-                }
-            }
-            if !all {
-                continue;
-            }
-            s -= (lname.len() as i64).min(60) / 2 + depth[i] as i64 * 2;
-            let tidy_home = f & (F_HOME | F_HIDDEN | F_JUNK) == F_HOME;
-            s += if f & F_JUNK != 0 { -60 } else if tidy_home { 90 } else if f & F_HOME != 0 { 40 } else { -30 };
-            s += match now - mtime[i] as i64 {
-                a if a < 7 * 86_400 => 30,
-                a if a < 365 * 86_400 => 8,
-                _ => 0,
             };
-            more.push(Hit { score: s, idx: i as u32, fuzzy: true });
+            if !hits.iter().any(|h| h.idx == i as u32) {
+                more.push(Hit { score: s + place(f, lname.len(), depth[i], now - mtime[i] as i64), idx: i as u32, fuzzy: true });
+            }
         }
         more.sort_unstable_by(order);
-        more.truncate((limit - hits.len()).min(20)); // a loose tail, not a flood
+        more.truncate((limit - hits.len()).min(FUZZY_MAX));
         hits.extend(more);
     }
     hits

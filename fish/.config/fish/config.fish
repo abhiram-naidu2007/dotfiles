@@ -19,7 +19,7 @@ if status is-interactive
     # ev [words]: Everything in the terminal. Results change as you type.
     #   Enter open · Alt+Enter cd to its folder · Ctrl+O edit · Ctrl+Y copy path
     function ev --description 'live search over every file on the disk'
-        set -l out (fzf --disabled --query "$argv" --delimiter '\t' --with-nth 2 --prompt '󰈞  ' \
+        set -l out (fzf --disabled --query "$argv" --delimiter '\t' --with-nth '{6} {2}' --prompt '󰈞  ' \
             --header 'pdf: img: dir: ext:rs notes/   ⏎ open  M-⏎ cd  ^O edit  ^Y copy' \
             --bind 'start:reload:evry --tsv -l 300 -- {q}' --bind 'change:reload:evry --tsv -l 300 -- {q}' \
             --preview 'rice-preview {2}' --preview-window 'right,50%' --height 100% \

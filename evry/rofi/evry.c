@@ -211,16 +211,20 @@ static void on_reply(GObject *source, GAsyncResult *res, gpointer data) {
     g_free(req);
 }
 
-static void request(Mode *sw, const char *input) {
-    Priv *pd = mode_get_private_data(sw);
-    g_free(pd->query);
-    pd->query = g_strdup(input);
+static void stop(Priv *pd) {
     if (pd->proc) {
         g_cancellable_cancel(pd->cancel);
         g_subprocess_force_exit(pd->proc);
         g_clear_object(&pd->proc);
         g_clear_object(&pd->cancel);
     }
+}
+
+static void request(Mode *sw, const char *input) {
+    Priv *pd = mode_get_private_data(sw);
+    g_free(pd->query);
+    pd->query = g_strdup(input);
+    stop(pd);
 
     const char *text = input;
     while (*text == ' ') {
@@ -304,12 +308,7 @@ static void evry_destroy(Mode *sw) {
         return;
     }
     g_source_remove(pd->poll);
-    if (pd->proc) {
-        g_cancellable_cancel(pd->cancel);
-        g_subprocess_force_exit(pd->proc);
-        g_clear_object(&pd->proc);
-        g_clear_object(&pd->cancel);
-    }
+    stop(pd);
     g_ptr_array_unref(pd->rows);
     g_free(pd->query);
     g_free(pd);
