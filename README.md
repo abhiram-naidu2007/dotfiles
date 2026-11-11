@@ -38,7 +38,7 @@ Each step is idempotent. `link` moves any clashing file to `.backup/<date>/` fir
 - Folders: `notes/` (anything inside a folder named like that), `docs/intro`.
 - Filters: `pdf: doc: img: vid: audio: code: zip: dir: file: home: sys: ext:rs *.png`. Without a plain word the newest come first.
 - Ranking: name matches beat path matches; your own files beat system files and package caches; recent and often-opened files rise.
-- Launcher keys: Enter open, Shift+Enter show in folder, Ctrl+Y copy path, Ctrl+T terminal there, Ctrl+O edit in Neovim (`rofi/.config/rofi/scripts/act.sh`).
+- Launcher keys: Enter open, Shift+Enter show in folder, Ctrl+Y copy path, Ctrl+T terminal there, Ctrl+O edit in Neovim (`evry/rofi/act.sh`).
 - Terminal: `evry WORDS`, or `ev` in fish for the same search live in fzf with a preview.
 - Settings: `~/.config/evry/config` (`skip PATH`, `skip-name NAME`, `junk-name NAME`, `root PATH`).
 

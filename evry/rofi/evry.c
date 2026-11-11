@@ -4,7 +4,7 @@
 //   calc.so   "calc":  every keystroke is evaluated by qalc; Enter copies the result.
 // Rofi's own modes get a fixed list once. Here each change of the input starts
 // the helper in the background; when it answers, the list is replaced.
-// Build: make -C ~/dotfiles/evry        Run: rofi/launcher.sh
+// Build: make install. Use: rofi -modes files,calc -show files (ROFI_PLUGIN_PATH=~/.local/lib/rofi)
 #include <gio/gio.h>
 #include <gmodule.h>
 #include <string.h>
@@ -84,7 +84,7 @@ static char *escape(const char *raw) {
 }
 
 static char *state_file(const char *name) {
-    return g_build_filename(g_get_user_state_dir(), "rice", name, NULL);
+    return g_build_filename(g_get_user_state_dir(), "evry", name, NULL);
 }
 
 // One line of "evry --tsv": kind \t path \t size \t age \t bytes \t ("~" for a loose match)
@@ -138,7 +138,7 @@ static Row *file_row(char *line) {
     return r;
 }
 
-// Earlier results (newest first), written by scripts/act.sh as "expression = result".
+// Earlier results (newest first), written by act.sh as "expression = result".
 static void add_calc_history(GPtrArray *rows) {
     char *file = state_file("calc-history"), *data = NULL;
     if (g_file_get_contents(file, &data, NULL, NULL)) {
@@ -409,7 +409,7 @@ static ModeMode evry_result(Mode *sw, int retv, G_GNUC_UNUSED char **input, unsi
         action = "reveal";
     }
     const char *env = g_getenv("EVRY_ACT");
-    char *script = env ? g_strdup(env) : g_build_filename(g_get_user_config_dir(), "rofi", "scripts", "act.sh", NULL);
+    char *script = env ? g_strdup(env) : g_strdup(EVRY_ACT_DEFAULT);
     char *argv[] = {script, (char *)action, r->arg, NULL};
     GError *error = NULL;
     if (!g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, &error)) {

@@ -804,7 +804,8 @@ fn cmd_index(args: &[String]) -> io::Result<()> {
 fn cmd_stat() -> io::Result<()> {
     let ix = Index::open()?;
     let size = fs::metadata(index_path())?.len();
-    println!("{} entries · {} · indexed {} ago", ix.n, human_size(size), human_age((now() - ix.built) as i64));
+    let age = human_age((now() - ix.built) as i64);
+    println!("{} entries · {} · indexed {}", ix.n, human_size(size), if age == "now" { "just now".into() } else { age + " ago" });
     Ok(())
 }
 
