@@ -689,6 +689,7 @@ fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, 
     if loose && hits.len() < limit {
         let seen: std::collections::HashSet<u32> = hits.iter().map(|h| h.idx).collect();
         let mut more: Vec<Hit> = Vec::new();
+        let lows: Vec<Vec<u8>> = q.terms.iter().map(|t| t.needle.to_ascii_lowercase()).collect();
         for i in 1..n {
             if acc[parent[i] as usize] & q.anc != q.anc || seen.contains(&(i as u32)) {
                 continue;
@@ -707,9 +708,9 @@ fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, 
             }
             let mut s = 0i64;
             let mut all = true;
-            for t in q.terms.iter().filter(|t| t.bit & q.norm != 0) {
-                let cmp = if t.case_sensitive { &names[a..b] } else { lname };
-                match fuzzy_score(&names[a..b], cmp, &t.needle) {
+            for (ti, t) in q.terms.iter().enumerate().filter(|(_, t)| t.bit & q.norm != 0) {
+                // Loose matching ignores case: a capital that finds nothing exact still finds the name.
+                match fuzzy_score(&names[a..b], lname, &lows[ti]) {
                     Some(v) => s += v + 10 * t.needle.len() as i64,
                     None => {
                         all = false;
@@ -731,7 +732,7 @@ fn search(ix: &Index, q: &Query, limit: usize, history: &HashMap<Vec<u8>, (u32, 
             more.push(Hit { score: s, idx: i as u32, fuzzy: true });
         }
         more.sort_unstable_by(order);
-        more.truncate(limit - hits.len());
+        more.truncate((limit - hits.len()).min(20)); // a loose tail, not a flood
         hits.extend(more);
     }
     hits
