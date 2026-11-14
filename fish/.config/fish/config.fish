@@ -1,5 +1,5 @@
 # Learn fish: ~/dotfiles/docs/fish.md
-# Every new shell: a wild Pokémon and a line of mathematics (~/.local/bin/rice-greet).
+# Every new shell: a wild Pokémon and a greeting (~/.local/bin/rice-greet).
 function fish_greeting
     rice-greet $COLUMNS
 end

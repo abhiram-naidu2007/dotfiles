@@ -7,13 +7,18 @@ restart() {   # SIGKILL after 2 s if it hangs
     pkill -x "$1"; for _ in $(seq 40); do pgrep -x "$1" >/dev/null || return; sleep 0.05; done; pkill -9 -x "$1"
 }
 ~/.config/i3/scripts/compositor.sh        # picom, with the shadow and shader of the current mood
-restart polybar; setsid polybar -q main >/dev/null 2>&1 &
-pgrep -x dunst >/dev/null || setsid dunst >/dev/null 2>&1 &
+if [ -e "$HOME/.config/loka/shell-on" ]; then
+    pkill -x polybar; pkill -x dunst
+    restart quickshell; restart loka; setsid "$HOME/.local/bin/loka-shell" >/dev/null 2>&1 &
+else
+    restart quickshell; restart loka
+    restart polybar; setsid polybar -q main >/dev/null 2>&1 &
+    pgrep -x dunst >/dev/null || setsid dunst >/dev/null 2>&1 &
+    pgrep -x xfce4-clipman >/dev/null || setsid xfce4-clipman >/dev/null 2>&1 &
+fi
 # system python only: a user-site python-xlib in ~/.local breaks i3ipc
 pgrep -f "^/usr/bin/python3 -s /usr/bin/autotiling" >/dev/null || setsid /usr/bin/python3 -s /usr/bin/autotiling >/dev/null 2>&1 &
 pgrep -x blueman-applet >/dev/null || setsid blueman-applet >/dev/null 2>&1 &
-# clipboard history (Super+C shows it)
-pgrep -x xfce4-clipman >/dev/null || setsid xfce4-clipman >/dev/null 2>&1 &
 # xsettingsd only announces the GTK theme, so open apps follow `rice mode` (it grabs no keys)
 pgrep -x xsettingsd >/dev/null || setsid xsettingsd >/dev/null 2>&1 &
 

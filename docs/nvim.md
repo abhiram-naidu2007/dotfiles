@@ -63,6 +63,6 @@ Work one rung at a time; a rung is done when you use it without thinking.
 | `lua/plugins/lsp.lua` | language servers: lua, python (basedpyright + ruff), rust, c/c++, typst, bash |
 | `lua/plugins/tools.lua` | debugger |
 | `lua/rice/` | own code: `run.lua` `evry.lua` `tricks.lua` `typst.lua` |
-| `colors/rice.lua`, `lua/lualine/themes/rice.lua` | generated from the desktop palette by `rice`; follow night / day / paper live |
+| `colors/rice.lua`, `lua/lualine/themes/rice.lua` | generated from the desktop palette by `rice`; follow the world and night / paper live |
 
 Add a plugin: a new table in one of `lua/plugins/*.lua`, with the key, command or event that should load it.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Wallpapers drawn from mathematics, in the desktop's own colour system.
 
-  mathart.py KIND OUT.png [--seed N] [--mode night|day|paper] [--size WxH] [--caption]
+  mathart.py KIND OUT.png [--seed N] [--mode night|paper] [--size WxH] [--caption]
 
   attractor     Clifford strange attractor: where 19 million iterates of a 2-D map land
   harmonograph  two damped pendulums drawing one curve

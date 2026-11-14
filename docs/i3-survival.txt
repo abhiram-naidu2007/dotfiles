@@ -12,38 +12,45 @@ LOST / STUCK?
 
 OPEN THINGS
   Super+Enter ...... terminal (fish)        also Ctrl+Alt+T
-  Super+A / Space .. launcher, Apps tab (type name, Enter). Click the Poke Ball on the bar for the same.
+  Super+A / Space .. launcher, Apps tab (type name, Enter). Click the left icon on the bar for the same.
   Super+O .......... find ANY file on the disk as you type      Super+D ... PDFs, newest first (opens zathura)
   Super+= .......... calculator (qalc): sqrt(2), 20!, solve(x^2 = 2), 5 km to mi. Enter copies the result
   Super+U .......... web: bookmarks of every browser profile; no match = open the address or search for it
   Super+Tab ........ window switcher
         in the launcher: Ctrl+Tab next tab (keeps your text) | =2^10 calculates | ?words searches the web
         on a file: Enter open | Shift+Enter show in folder | Ctrl+Y copy path | Ctrl+T terminal there | Ctrl+O edit
-        filters: pdf: doc: img: vid: audio: code: dir: file: ext:rs    folders: notes/   docs/intro
+        filters: pdf: doc: img: vid: audio: code: zip: dir: file: home: sys: ext:rs *.png    folders: notes/   docs/intro
   Super+B .......... Thorium (last profile)   Super+Shift+B ... choose Thorium profile (3 accounts)
   Super+E .......... file manager
   Super+G .......... lock screen
   Print ............ screenshot of screen     Super+Shift+S ... drag an area or click a window (~/Pictures + clipboard)
   Super+Ctrl+S ..... capture menu: area, window, screen, record area, record screen, record with sound
-  Super+Ctrl+R ..... screen recording: select an area to start, press again to stop (~/Videos; red REC pill on the bar)
+  Super+Ctrl+R ..... screen recording: select an area to start, press again to stop (~/Videos; the island shows REC)
                      For long or produced recordings (webcam, several sources, streaming): OBS Studio, in the launcher.
   Super+C .......... clipboard history       Super+` ......... drop-down terminal (same key hides it)
   Super+I .......... quick settings (sound, network, bluetooth, display, mood and wallpaper)
   Super+Shift+W .... showcase layout on workspace 3 (press again to close)
+  Super+Z .......... WhatsApp (ZapFast; Super+Shift+Z quits)   Super+. ... kaomoji   Super+N ... the desktop cat
+  Super+F5 / F6 .... brightness down / up    Super+F11 / F12 ... volume down / up
+
+SHELL (the bar and the island; every page works from the keyboard: Tab/arrows, Enter, Esc)
+  Super+X .......... control centre   Super+Shift+N ... notifications   Super+Y ... calendar
+  Super+Shift+D .... do not disturb   Super+, ......... shell settings
+  Bar: left icon = launcher, globe = web. Wi-Fi / Bluetooth / speaker / battery: click = their page,
+       right click = nm-connection-editor / blueman-manager / pavucontrol / quick settings.
+       Wheel over the speaker = volume, middle click = mute.
 
 LOOK (one palette for every program; details: rice help)
-  Super+T .......... mood: night -> day -> paper (cream and ink for reading; every window goes through an e-ink shader)
-  Super+Shift+T .... mood and wallpaper menu
-  Super+Ctrl+W ..... wallpaper picker: live and normal wallpapers; the colours are read from the picture
+  Super+T .......... worlds: wallpaper cards per world (Left/Right = wallpaper, Up/Down = world, Enter)
+  Super+Shift+T .... next world (Meridian -> Katha -> Sakuga -> Toon)
+  Super+Ctrl+W ..... the same world switcher. Colours come from the world; Sakuga reads them from the picture
+  Mood (night / paper: cream and ink, every window through an e-ink shader): Super+I, the control centre, or rice mode next
   Super+Ctrl+A ..... draw a new mathematical wallpaper (attractor, harmonograph, Julia set, prime spiral, rose)
-  Super+Ctrl+D ..... live wallpapers move / hold still (also: the "live" button on the bar). They move only while the workspace is empty and never on battery.
+  Super+Ctrl+D ..... live wallpapers move / hold still (also: the live button in the control centre). They move only while the workspace is empty and never on battery.
                      Super+Ctrl+N = next live wallpaper: the temple and the
-                     mathematical ones. Pick live or normal wallpapers by sight in Super+Ctrl+W.
-  Bar: Poke Ball = launcher, globe = web. Moon/sun/book = mood (click: next, right click: menu). HP bar = battery.
-                     Click the date = calendar. Wheel over the speaker = volume.
-  Music pill (appears when anything plays, browser tabs too): click title = play/pause,
-                     arrows = previous/next, wheel = seek 5 s, right click title = hide the title.
-  Pictures live in ~/dotfiles/wallpaper and ~/Pictures/wallpapers.   Terminal: rice wall next | rice art julia 42
+                     mathematical ones. Pick live scenes and pictures by sight: rice pick (terminal).
+  Music: hover the island for what plays; the control centre has the media card.
+  Pictures live in ~/dotfiles/wallpaper/WORLD and ~/Pictures/wallpapers.   Terminal: rice world toon | rice wall next | rice art julia 42
 
 PDF (zathura; the page takes the palette's colours).  F1 inside zathura lists every key.
   j k h l scroll | d u half page | J K page | gg G first/last | 12G page 12 | / search, n N next/previous
@@ -98,7 +105,7 @@ i3 ITSELF
 MUSIC (limusic; not autostarted, launches on first press)
   Super+M .......... open / show / hide limusic (scratchpad, floats over any workspace)
   Super+F8 ......... previous track     Super+F9 ... play/pause     Super+F10 ... next track
-  Polybar music: left click play/pause, right click next, middle click show/hide
+  Polybar music (shell off): left click play/pause, arrows previous/next, wheel seeks, right click hides the title
   Quit to free RAM (~660 MB):  pkill -x limusic-app
   Terminal:  playerctl -p limusic play-pause|next|previous|status
              playerctl -p limusic position 30   volume 0.5   shuffle Toggle
@@ -108,8 +115,8 @@ MEDIA KEYS: volume, mute, brightness, play/next/prev work from the keyboard.
 
 WHERE THINGS LIVE (edit in ~/dotfiles, never in ~/.config; changes apply after Super+Shift+C)
   i3/.config/i3/config .......... keys and behaviour
-  polybar/ rofi/ dunst/ picom/ ghostty/ fish/ gtk/ zathura/ evry/ rice/ art/ nvim/ mathwall/
+  loka/ polybar/ rofi/ dunst/ picom/ ghostty/ fish/ gtk/ zathura/ evry/ rice/ art/ nvim/ mathwall/   (shell source: loka/shell)
   docs/nvim.md .................. Neovim keys, trainers, learning ladder (in nvim: Space t k)
-  theme/apply.py ................ palette from wallpaper. Re-theme everything:  rice
+  theme/apply.py ................ palette per world (Sakuga: from the wallpaper). Re-theme everything:  rice
   docs/fish.md .................. fish cheat sheet
   Undo any mistake:  cd ~/dotfiles && git log --oneline && git checkout <commit> -- <file>

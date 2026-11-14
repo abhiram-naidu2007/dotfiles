@@ -2,29 +2,30 @@
 # Idempotent setup. Usage: ./install.sh [--dry-run] <step...>
 #   packages  apt + uv packages for the i3 desktop      (sudo)
 #   link      back up clashing files, then stow every package into ~
-#   build     compile evry (file search + rofi tabs), mochi (desktop cat), mathwall (live wallpaper); Neovim plugins
+#   build     compile evry (file search + rofi tabs), mochi (desktop cat), mathwall (live wallpaper), limusic (rice.so), the loka shell; Neovim plugins
 #   extras    Pokémon terminal sprites, a first set of mathematical wallpapers
 #   theme     generate colours from the current wallpaper
-#   user      default apps, timers, lock hooks, XFCE keybinding (no sudo)
+#   user      default apps, the evry index timer, lock hooks, XFCE keybinding (no sudo)
 #   system    SDDM + Dog Samurai theme                  (sudo)
 #   all       packages link build extras theme user system
 set -euo pipefail
 DOT="$(cd "$(dirname "$0")" && pwd)"
 LOCK="$DOT/lockscreen/lock.sh"
-STOW_PKGS=(i3 polybar rofi dunst picom ghostty fish gtk thorium systemd zathura fastfetch rice apps nvim)
+STOW_PKGS=(i3 polybar rofi dunst picom ghostty fish gtk systemd zathura fastfetch rice apps nvim)
 APT_PKGS=(i3 polybar rofi dunst picom fish starship stow fonts-inter autotiling feh
           policykit-1-gnome brightnessctl playerctl maim slop xdotool ffmpeg obs-studio xclip xfce4-clipman network-manager-gnome
           btop tty-clock ncal fastfetch cava
           i3lock xss-lock imagemagick libnotify-bin x11-xserver-utils xinput
           pipewire-pulse wireplumber pavucontrol blueman arandr
-          papirus-icon-theme bibata-cursor-theme gnome-themes-extra xsettingsd
+          papirus-icon-theme gnome-themes-extra xsettingsd
           exo-utils xfce4-settings xfce4-power-manager neovim
           zathura zathura-pdf-poppler zathura-djvu zathura-cb poppler-utils
           fzf bat eza zoxide chafa qalc jq
           rofi-dev libglib2.0-dev libcairo2-dev libx11-dev libxext-dev libgl-dev build-essential lazygit
           python3-numpy python3-pil python3-cairo python3-venv
           fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji)
-# Not in apt: JetBrainsMono Nerd Font (~/.local/share/fonts), ghostty, thorium, limusic AppImage, cargo (rustup.rs, for evry)
+# Not in apt: JetBrainsMono Nerd Font (~/.local/share/fonts), ghostty, thorium, limusic AppImage, cargo (rustup.rs, for evry and loka),
+# typst (~/.local/bin), catppuccin-mocha-peach-cursors (~/.icons), quickshell (~/.local/bin, only for the fallback shell)
 DRY=0
 
 run() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
@@ -47,6 +48,9 @@ link() {
     done < <(find "$DOT/$pkg" -type f)
   done
   run stow --no-folding -d "$DOT" -t "$HOME" -R "${STOW_PKGS[@]}"
+  # loka helpers are plain scripts, linked one by one
+  run mkdir -p "$HOME/.local/bin"
+  for f in "$DOT"/loka/bin/*; do run ln -sfn "$f" "$HOME/.local/bin/$(basename "$f")"; done
 }
 
 build() {
@@ -55,6 +59,8 @@ build() {
   run make -C "$DOT/mathwall" install  # ~/.local/bin/mathwall (live wallpaper)
   run make -C "$DOT/limusic" install   # ~/.local/lib/limusic-rice/rice.so (limusic in the desktop colours)
   run "$HOME/.local/bin/evry" index
+  run cargo build --release --manifest-path "$DOT/loka/shell/Cargo.toml"
+  run install -m755 "$DOT/loka/shell/target/release/loka" "$HOME/.local/bin/loka"
   # Neovim: Python language server and debugger through uv; the rest installs itself on first start
   command -v basedpyright-langserver >/dev/null || run uv tool install basedpyright
   [ -x "$HOME/.local/share/nvim/debugpy/bin/python" ] || {
@@ -85,16 +91,16 @@ user() {
     printf '[Desktop Entry]\nType=Application\nName=xss-lock\nExec=xss-lock --transfer-sleep-lock -- %s\n' "$LOCK" > ~/.config/autostart/xss-lock.desktop
   fi
   run xfconf-query -c xfce4-screensaver -p /lock/enabled -n -t bool -s false
-  # Day/night wallpaper swap (06:00 / 18:00) and the file index refresh (every 20 min);
-  # unit files come from the systemd stow package
+  # File index refresh (every 20 min); the unit files come from the systemd stow package
   run systemctl --user daemon-reload
-  run systemctl --user enable --now wallpaper.timer evry-index.timer
+  run systemctl --user enable --now evry-index.timer
   # Default apps: PDFs in zathura, text in Neovim inside Ghostty
   run xdg-mime default org.pwmt.zathura.desktop application/pdf image/vnd.djvu application/x-cbz application/x-cbr application/vnd.comicbook+zip
   run xdg-mime default nvim-ghostty.desktop text/plain text/markdown text/x-python text/x-csrc text/x-chdr text/x-c++src text/x-c++hdr \
     text/x-rust text/x-lua text/x-tex text/x-makefile text/x-shellscript application/x-shellscript application/json application/toml \
     application/x-yaml text/css text/x-log
   # Thorium flags hold absolute extension paths
+  run mkdir -p ~/.config/thorium
   if [ "$DRY" = 0 ]; then
     sed "s|@HOME@|$HOME|g" "$DOT/thorium/thorium-flags.conf.in" > ~/.config/thorium/thorium-flags.conf
   fi

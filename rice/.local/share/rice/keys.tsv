@@ -16,16 +16,18 @@ files	ext:rs *.png	by extension
 bar	Poke Ball	click: launcher. right click: file search. middle click: new mathematical wallpaper
 bar	globe	click: bookmarks and web search. right click: new browser window. middle: choose profile
 bar	workspaces	click to go there; wheel to cycle
-bar	music pill	click title: play/pause. arrows: previous/next. wheel: seek 5 s. right click title: hide it
-bar	clock / date	click the time: seconds. click the date: calendar
-bar	REC	shown while recording; click to stop
-bar	speaker	wheel: volume. click: mute. right click: mixer
-bar	HP	battery; click: quick settings
-bar	moon / sun / book	mood. click: next mood. right click: mood and wallpaper menu
-bar	power	power menu
-terminal	rice help	everything `rice` can do (wallpaper, mood, live wallpaper, math art)
+bar	island	hover: date and now playing. click: control centre. it also shows media, REC, notifications and volume
+bar	CPU RAM GPU	load; click: control centre
+bar	Wi-Fi / Bluetooth	click: networks / devices. right click Wi-Fi: connection editor
+bar	speaker	wheel: volume. click: sound page. middle click: mute. right click: mixer
+bar	HP	battery; click: control centre. right click: quick settings
+bar	picture / play	click: live wallpaper moves or holds (on a picture: world wallpapers). wheel: next scene
+bar	palette / book	click: theme <-> paper (e-ink). right click: mood and wallpaper menu
+bar	power	click: power page. right click: power menu
+terminal	rice help	everything `rice` can do (worlds, wallpaper, paper, live wallpaper, math art)
+terminal	rice world NAME [FILE]	switch world: meridian katha sakuga toon (Super+T picks with cards)
 terminal	rice pick	picker: live wallpapers (scenes) and normal wallpapers (pictures in ~/Pictures/wallpapers)
-terminal	rice mode night|day|paper	change the mood of the whole desktop
+terminal	rice mode night|paper	the world's own theme, or e-ink paper
 terminal	rice scene next / rice live toggle	next live wallpaper / live wallpapers move or hold still
 terminal	rice art [kind]	draw a new mathematical wallpaper: attractor harmonograph julia sacks rose
 terminal	evry WORDS	find files anywhere on the disk (same search as the launcher)
@@ -70,5 +72,5 @@ zathura	Ctrl+N	status bar on / off
 zathura	:print :info :bmark NAME	commands (Tab completes)
 zathura	r / p / q	reload / print / quit. The page you were on is remembered for every file
 browser	new tab	type in the box: an address opens, anything else is searched. Tiles: your bookmarks bar
-browser	Pokemon / formula	click for another one
+browser	Pokemon	click for another one
 windows	Super + drag	move a floating window. Super + right drag: resize it

@@ -65,16 +65,6 @@ function wild() {
 $("wild").addEventListener("click", wild);
 wild();
 
-// --- a line of mathematics
-function line() {
-  if (typeof MATH === "undefined" || !MATH.length) return;
-  const m = pick(MATH);
-  $("formula").textContent = m[0];
-  $("who").textContent = m[1];
-}
-$("math").addEventListener("click", line);
-line();
-
 // --- behind everything, a harmonograph draws itself once (two damped pendulums), then rests
 (function curve() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;

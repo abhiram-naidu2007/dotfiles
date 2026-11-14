@@ -8,14 +8,13 @@
 # Three settings are kept, each on its own; changing one never changes another:
 #   what is shown    a picture or a live scene
 #   live on|off      whether live scenes move; off = a still of the same scene
-#   the mood         night, day or paper
+#   the mood         night (the world's own theme) or paper (e-ink)
 # Choosing a live scene turns live on; choosing a picture shows the picture.
 #
 #   rice                     re-apply everything (login)
 #   rice pick                choose by sight: live scenes and pictures in one grid
-#   rice wall PATH|auto|next|prev|random
+#   rice wall PATH|next|prev|random
 #                            show this picture; the palette is read from it.
-#                            auto = day picture 06-18, night picture otherwise
 #   rice scene NAME|next|prev|list|none
 #                            show a live scene (`rice scene list`). none = back to the picture.
 #                              temple          a drawn temple town at dusk or dawn
@@ -23,18 +22,24 @@
 #   rice live on|off|always|toggle
 #                            on = a live scene moves while the workspace is empty and the machine is
 #                            on mains; always = also behind windows; off = a still frame of it
-#   rice mode night|day|paper|next
+#   rice mode night|paper|next     night = the world's own theme, paper = e-ink reading
+#   rice world meridian|katha|sakuga|toon|next|none [FILE]
+#                            a loka world: its own hues for every program (the shell, terminal,
+#                            i3, rofi, GTK, Neovim ...) and one of its wallpapers, pictures or
+#                            videos (videos: Meridian only) in ~/dotfiles/wallpaper/NAME (FILE, else the last one used
+#                            there). none = back to reading the hues from the wallpaper.
+#   rice world-walls NAME    that world's wallpapers: path, picture|video, thumbnail
 #   rice art [KIND] [SEED]   draw a new mathematical wallpaper and show it
 #                            (attractor harmonograph julia sacks rose; default: random)
 #   rice menu                mood, wallpaper, math art and live as a rofi menu
 #   rice status | help
 #
-# night  dark base, pastel accents          day    light base, deeper accents
+# night  the world's own theme
 # paper  cream and ink for reading: fixed palette, wallpaper printed in ink,
 #        every window drawn through an e-ink shader
 #
 # Pictures: ~/dotfiles/wallpaper and ~/Pictures/wallpapers (any depth).
-# State:    ~/.local/state/rice/{wallpaper,scene,live,mode}   (scene = picture: no live scene)
+# State:    ~/.local/state/rice/{wallpaper,scene,live,mode,world}   (scene = picture: no live scene)
 export PATH="$HOME/.local/bin:$PATH"
 DOT="$HOME/dotfiles"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/rice"
@@ -44,21 +49,52 @@ RUN="${XDG_RUNTIME_DIR:-/tmp}"
 PICTURES="$HOME/Pictures/wallpapers"
 WALLS=("$DOT/wallpaper" "$PICTURES")
 SCENE_DIR="$DATA/mathwall/scenes"
-MODES=(night day paper)
+MODES=(night paper)
+WORLDS=(meridian katha sakuga toon)
+LOKA_WALLS="$DOT/wallpaper"
 mkdir -p "$STATE" "$CACHE"
-rm -f "$STATE/live-scene"                                # its name before `scene`
 
 say() { notify-send -t 2500 -i preferences-desktop-wallpaper "$@" 2>/dev/null; }
 
 # ---- the three settings
-mode_now() { local m; m=$(cat "$STATE/mode" 2>/dev/null); case $m in night|day|paper) echo "$m" ;; *) echo night ;; esac; }
+mode_now() { local m; m=$(cat "$STATE/mode" 2>/dev/null); case $m in night|paper) echo "$m" ;; *) echo night ;; esac; }
+world_items() {
+  local video=()
+  [ "$1" = meridian ] && video=(-o -iname '*.mp4' -o -iname '*.webm' -o -iname '*.mkv' -o -iname '*.mov')
+  find -L "$LOKA_WALLS/$1" -maxdepth 2 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' "${video[@]}" \) 2>/dev/null | sort
+}
+is_video() { case "${1,,}" in *.mp4|*.webm|*.mkv|*.mov) return 0 ;; esac; return 1; }
+world_scene() { local b=${2##*/}; echo "loka-$1-${b%.*}"; }
+world_link() { local f=$2 ext=${2##*.}; mkdir -p "$SCENE_DIR"; ln -sfn "$(readlink -f "$f")" "$SCENE_DIR/$(world_scene "$1" "$f").$ext"; }
+world_thumb() {
+  local f=$1 out src
+  out="$CACHE/thumbs/world-$(printf '%s' "$(readlink -f "$f")" | md5sum | cut -c1-12)-card.png"
+  if [ ! -s "$out" ] || [ "$f" -nt "$out" ]; then
+    mkdir -p "$CACHE/thumbs"
+    src="$out.src.png"
+    if is_video "$f"; then ffmpeg -nostdin -loglevel quiet -y -ss 1 -i "$f" -frames:v 1 "$src"; else magick "$f" "$src"; fi
+    magick "$src" -resize 766x360^ -gravity center -extent 766x360 \
+      \( -size 766x360 xc:black -fill white -draw "polygon 126,0 766,0 640,360 0,360" \) \
+      -alpha off -compose CopyOpacity -composite \
+      -fill none -stroke 'rgba(255,255,255,0.22)' -strokewidth 2 -draw "polygon 127,1 764,1 639,359 2,359" "$out"
+    rm -f "$src"
+  fi
+  echo "$out"
+}
+world_walls() {
+  local f
+  while read -r f; do
+    [ -n "$f" ] || continue
+    printf '%s|%s|%s\n' "$f" "$(is_video "$f" && echo video || echo picture)" "$(world_thumb "$f")"
+  done < <(world_items "$1")
+}
+world_now() { local w; w=$(cat "$STATE/world" 2>/dev/null); [ -n "$w" ] && [ -d "$LOKA_WALLS/$w" ] && echo "$w"; }
 live_now() { local l; l=$(cat "$STATE/live" 2>/dev/null); case $l in on|always) echo "$l" ;; *) echo off ;; esac; }
 wall_setting() { local w; w=$(cat "$STATE/wallpaper" 2>/dev/null); [ -n "$w" ] && [ -r "$w" ] && echo "$w" || echo auto; }
 wall_now() {
-  local w h; w=$(wall_setting)
+  local w; w=$(wall_setting)
   if [ "$w" = auto ]; then
-    h=$(date +%-H)
-    if [ "$h" -ge 6 ] && [ "$h" -lt 18 ]; then w="$DOT/wallpaper/morning.jpg"; else w="$DOT/wallpaper/night.jpg"; fi
+    w=$(world_items "$(world_now || echo meridian)" | grep -viE '\.(mp4|webm|mkv|mov)$' | head -1)
   fi
   echo "$w"
 }
@@ -83,7 +119,7 @@ screen_size() { local g; g=$(xdotool getdisplaygeometry 2>/dev/null | tr ' ' x);
 # between light and dark. A scene file that was edited gets a fresh frame.
 scene_frame_path() {
   local look=dark stamp key
-  case "${3:-$(mode_now)}" in day|paper) look=light ;; esac
+  case "${3:-$(mode_now)}" in paper) look=light ;; esac
   stamp=$(stat -L -c %Y "$SCENE_DIR/$1.frag" 2>/dev/null)
   if scene_own_colours "$1"; then key=$look-${stamp:-0}
   else key=$look-$( { grep -E "^(accent|accent2|bg|crust|fg)=" "$HOME/.cache/theme/colors.sh" 2>/dev/null; echo "$stamp"; } | md5sum | cut -c1-8); fi
@@ -92,7 +128,7 @@ scene_frame_path() {
 scene_frame() {
   local out look=dark
   out=$(scene_frame_path "$@")
-  case "${3:-$(mode_now)}" in day|paper) look=light ;; esac
+  case "${3:-$(mode_now)}" in paper) look=light ;; esac
   if [ ! -s "$out" ]; then
     mkdir -p "$CACHE/thumbs"
     mathwall --snapshot "$out.ppm" --scene "$1" --size "$2" --mood "$look" 2>/dev/null && magick "$out.ppm" "$out"
@@ -121,8 +157,15 @@ nudge() {   # NAME SIGNAL-NUMBER
 
 # The live wallpaper of this session (mathwall keeps its pid in the runtime directory).
 engine() {
-  local p; p=$(cat "$RUN/mathwall.pid" 2>/dev/null)
-  [ -n "$p" ] && [ "$(cat "/proc/$p/comm" 2>/dev/null)" = mathwall ] && echo "$p"
+  local p c; p=$(cat "$RUN/mathwall.pid" 2>/dev/null)
+  if [ -n "$p" ] && [ "$(cat "/proc/$p/comm" 2>/dev/null)" = mathwall ]; then echo "$p"; return; fi
+  for p in $(pgrep -u "$USER" -x mathwall); do
+    c=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)
+    case "$c" in *--snapshot*|*--bench*) continue ;; esac
+    case "$c" in *"--scene /"*.png*|*"--scene /"*.jpg*|*"--scene /"*.ppm*|*"--scene /"*.webp*|*"--scene /"*.jpeg*) continue ;; esac
+    echo "$p"; return
+  done
+  return 1
 }
 engine_stop() {
   local p i; p=$(engine) || return 0
@@ -161,7 +204,7 @@ tell_programs() {
 #   mirror    the picture is mirrored beside itself, darker and out of focus, like a hall of mirrors
 #   glow      a blurred, darkened copy of the picture fills the rest
 # A picture within 3 % of the screen's shape is used as it is (the little that does not fit is
-# trimmed), and so are the day and night pictures in ~/dotfiles/wallpaper, which are composed for
+# trimmed), and so are the pictures in ~/dotfiles/wallpaper, which are composed for
 # filling the screen. Made once, kept in the cache.
 fit_style() {
   local name=${1##*/} pat style
@@ -174,7 +217,7 @@ fit_style() {
 fitted() {
   local src=$1 size w h iw ih out style nw nh gx gy wide
   [ -f "$src" ] || { echo "$src"; return; }
-  case "$src" in "$DOT"/wallpaper/*) echo "$src"; return ;; esac
+  case "$(readlink -f "$src")" in "$DOT"/wallpaper/*) echo "$src"; return ;; esac
   size=$(screen_size); w=${size%x*}; h=${size#*x}
   read -r iw ih < <(magick identify -format '%w %h' "$src[0]" 2>/dev/null)
   [ -n "$iw" ] && [ "$iw" -gt 0 ] && [ "$ih" -gt 0 ] || { echo "$src"; return; }
@@ -218,11 +261,11 @@ fitted() {
 paper_wall() {
   local src=$1 out
   src=$(fitted "$src")
-  out="$CACHE/paper-$(printf '%s' "$src$(stat -c %Y "$src")" | md5sum | cut -c1-12).png"
+  . "$HOME/.cache/theme/colors.sh"
+  out="$CACHE/paper-$(printf '%s' "$src$(stat -c %Y "$src")$fg$bg" | md5sum | cut -c1-12).png"
   if [ ! -s "$out" ]; then
-    . "$HOME/.cache/theme/colors.sh"
-    magick "$src" -colorspace Gray \
-      -sigmoidal-contrast 3x55% +level-colors "$fg","$bg" "$out.tmp.png" && mv "$out.tmp.png" "$out"
+    magick "$src" -colorspace Gray -auto-level -sigmoidal-contrast 3x45% \
+      -ordered-dither o4x4,16 -colorspace sRGB +level-colors "$fg","$bg" "$out.tmp.png" && mv "$out.tmp.png" "$out"
   fi
   echo "$out"
 }
@@ -230,7 +273,7 @@ paper_wall() {
 # ---- the dissolve: a copy of the screen held on top while the looks change underneath
 CURTAIN=
 curtain_up() {
-  [ -z "$RICE_QUIET" ] && running i3 && running picom && command -v rice-curtain >/dev/null || return 0
+  [ -z "$RICE_QUIET" ] && [ -z "$RICE_NO_CURTAIN" ] && [ -z "$FX" ] && running i3 && running picom && command -v rice-curtain >/dev/null || return 0
   coproc CURTAIN_JOB { exec rice-curtain; }
   CURTAIN=$CURTAIN_JOB_PID
   read -r -t 1 -u "${CURTAIN_JOB[0]}" _ 2>/dev/null        # until the copy is on screen
@@ -243,9 +286,9 @@ curtain_down() {   # $1 = seconds the bar and the compositor need to be back; ri
 
 # ---- make the desktop match the three settings
 apply() {
-  local wall mode scene source shown look before after picom_before picom_after p settle=0.2
+  local wall mode scene source shown look before after picom_before picom_after p settle=0.2 world
   scan
-  wall=$(wall_now); mode=$(mode_now); scene=$(scene_now)
+  wall=$(wall_now); mode=$(mode_now); scene=$(scene_now); world=$(world_now)
   [ -r "$wall" ] || { echo "rice: no such wallpaper: $wall" >&2; return 1; }
   # the palette is read from what is shown: the picture, or a live scene that has colours of its own
   source=$wall
@@ -255,7 +298,7 @@ apply() {
   curtain_up
   before=$(md5sum "$HOME/.config/i3/colors.conf" 2>/dev/null)
   picom_before=$(grep -E '^(shadow_opacity|picom_shader)=' "$HOME/.cache/theme/colors.sh" 2>/dev/null)
-  python3 -I "$DOT/theme/apply.py" --mode "$mode" "$source" >/dev/null || { curtain_down 0; echo "rice: theme/apply.py failed" >&2; return 1; }
+  python3 -I "$DOT/theme/apply.py" --mode "$mode" ${world:+--world "$world"} "$source" >/dev/null || { curtain_down 0; echo "rice: theme/apply.py failed" >&2; return 1; }
   after=$(md5sum "$HOME/.config/i3/colors.conf" 2>/dev/null)
   picom_after=$(grep -E '^(shadow_opacity|picom_shader)=' "$HOME/.cache/theme/colors.sh" 2>/dev/null)
 
@@ -264,37 +307,50 @@ apply() {
     shown=$(fitted "$wall")
     [ "$mode" = paper ] && shown=$(paper_wall "$wall")
   else
-    shown="$CACHE/still.ppm"; look=dark; case $mode in day|paper) look=light ;; esac
+    shown="$CACHE/still.ppm"; look=dark; case $mode in paper) look=light ;; esac
     mathwall --snapshot "$shown.tmp" --scene "$scene" --size "$(screen_size)" --mood "$look" 2>/dev/null && mv "$shown.tmp" "$shown" || shown=$wall
+  fi
+  tell_programs "$([ "$before" != "$after" ] && echo recoloured)"
+  # shadow strength and the e-ink shader belong to the mood: restart picom only when they changed
+  if [ -z "$RICE_QUIET" ] && running i3 && [ "$picom_before" != "$picom_after" ]; then
+    "$HOME/.config/i3/scripts/compositor.sh"; settle=0.45
+  fi
+  OLD_SHOWN=$(cat "$CACHE/shown" 2>/dev/null)
+  HANDED=
+  if [ -n "$FX" ] && [ -z "$RICE_QUIET" ] && running i3 && [ "$scene" = picture ] && [ -r "$OLD_SHOWN" ] && [ "$OLD_SHOWN" != "$shown" ] && command -v mathwall >/dev/null; then
+    p=$(engine)
+    if [ -n "$p" ]; then
+      echo "$shown" > "$RUN/mathwall.goto"; kill -USR2 "$p"
+    else
+      coproc FX_JOB { exec setsid mathwall --from "$OLD_SHOWN" --scene "$shown" 2>/dev/null; }
+      read -r -t 2 -u "${FX_JOB[0]}" _ 2>/dev/null
+    fi
+    HANDED=1
   fi
   echo "$shown" > "$CACHE/shown"                        # what is on the desktop now (rice status)
   if [ -n "$RICE_QUIET" ] || running i3; then
-    feh --no-fehbg --bg-fill "$shown"
+    nice -n 19 feh --no-fehbg --bg-fill "$shown"
   else   # XFCE session
     for p in $(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep '/last-image$'); do
       xfconf-query -c xfce4-desktop -p "$p" -s "$shown"
     done
   fi
 
-  tell_programs "$([ "$before" != "$after" ] && echo recoloured)"
-  # shadow strength and the e-ink shader belong to the mood: restart picom only when they changed
-  if [ -z "$RICE_QUIET" ] && running i3 && [ "$picom_before" != "$picom_after" ]; then
-    "$HOME/.config/i3/scripts/compositor.sh"; settle=0.45
-  fi
   live_sync "$scene"
   curtain_down "$settle"
   # Everything above is what you see change. The pictures below are only needed the next time the
   # launcher or a new browser tab opens, so they are made in the background and `rice` does not
   # wait for them. The lock keeps two quick changes in order: the later one writes last.
   (
+    [ -n "$HANDED" ] && sleep 1.6
     flock 9
     # launcher side panel: a tall slice from the middle of what is shown
     magick "$shown" -resize x828^ -gravity center -extent 450x828 "$CACHE/art.tmp.png" && mv "$CACHE/art.tmp.png" "$CACHE/art.png"
-    # browser new-tab page: the same picture behind it, and its Pokémon + mathematics data
+    # browser new-tab page: the same picture behind it, and its Pokémon data
     tab="$DATA/thorium-ext/rice-newtab"
     if [ -d "$tab" ]; then
       magick "$shown" -resize 1600x900^ -gravity center -extent 1600x900 -quality 80 "$tab/bg.tmp.jpg" && mv "$tab/bg.tmp.jpg" "$tab/bg.jpg"
-      { [ -s "$tab/data.js" ] && [ "$tab/data.js" -nt "$DATA/rice/math.txt" ]; } || python3 -I "$DOT/art/sprites.py" "$tab/data.js" >/dev/null
+      [ -s "$tab/data.js" ] || python3 -I "$DOT/art/sprites.py" "$tab/data.js" >/dev/null
     fi
   ) 9> "$CACHE/panel.lock" >/dev/null 2>&1 &
   # the lock picture is rendered ahead of time, so locking (and suspend) stays instant
@@ -307,6 +363,7 @@ live_sync() {
   want=$(live_now)
   command -v mathwall >/dev/null || return 0
   [ -n "$RICE_QUIET" ] || running i3 || return 0        # under XFCE the desktop is not ours to draw on
+  if [ "$scene" = picture ] && [ -n "$HANDED" ]; then return 0; fi
   if [ "$want" = off ] || [ "$scene" = picture ]; then engine_stop; return 0; fi    # a picture does not move
   pid=$(engine)
   if [ -n "$pid" ]; then              # restart only when its flags no longer match ...
@@ -330,7 +387,9 @@ live_sync() {
     fi
   else
     # in a subshell, so that nothing here ever waits for the wallpaper to exit
-    ( setsid mathwall --scene "$scene" --cycle 0 $([ "$want" = always ] && echo --always) >/dev/null 2>&1 & )
+    local from=()
+    [ -n "$FX" ] && [ -r "$OLD_SHOWN" ] && from=(--from "$OLD_SHOWN")
+    ( setsid mathwall --scene "$scene" --cycle 0 "${from[@]}" $([ "$want" = always ] && echo --always) >/dev/null 2>&1 & )
   fi
 }
 
@@ -339,7 +398,6 @@ wall() {
   local list i n cur k
   case "${1:-}" in
     "" ) wall_now; return ;;
-    auto) echo auto > "$STATE/wallpaper" ;;
     pick) pick; return ;;
     next|prev|random)
       mapfile -t list < <(wall_list); n=${#list[@]}
@@ -352,7 +410,45 @@ wall() {
        realpath "$1" > "$STATE/wallpaper" ;;
   esac
   echo picture > "$STATE/scene"                         # choosing a picture means showing it
-  apply
+  rm -f "$STATE/world"                                  # and leaving the world
+  FX=1 apply
+}
+
+world() {
+  local w=${1:-} cur i
+  if [ "$w" = next ]; then
+    cur=$(world_now); w=${WORLDS[0]}
+    for i in "${!WORLDS[@]}"; do [ "${WORLDS[$i]}" = "$cur" ] && w=${WORLDS[$(( (i + 1) % ${#WORLDS[@]} ))]}; done
+  fi
+  case $w in
+    "") world_now; return ;;
+    none) rm -f "$STATE/world"; apply; return ;;
+  esac
+  grep -qx -- "$w" < <(printf '%s\n' "${WORLDS[@]}") || { echo "rice: world is one of: ${WORLDS[*]} next none" >&2; return 1; }
+  local item=${2:-} items pic
+  mapfile -t items < <(world_items "$w")
+  [ "${#items[@]}" -gt 0 ] || { echo "rice: no wallpapers in $LOKA_WALLS/$w" >&2; return 1; }
+  [ -n "$item" ] || item=$(cat "$STATE/world-$w" 2>/dev/null)
+  if [ -z "$item" ] || ! printf '%s\n' "${items[@]}" | grep -qxF -- "$item"; then
+    item=${items[0]}
+    for pic in "${items[@]}"; do is_video "$pic" && { item=$pic; break; }; done
+  fi
+  printf '%s\n' "${items[@]}" | grep -qxF -- "$item" || { echo "rice: $item is not in $LOKA_WALLS/$w" >&2; return 1; }
+  echo "$w" > "$STATE/world"
+  echo "$item" > "$STATE/world-$w"
+  if is_video "$item"; then
+    pic=
+    for f in "${items[@]}"; do is_video "$f" || { pic=$f; break; }; done
+    world_link "$w" "$item"
+    unset SCENES
+    echo "${pic:-$item}" > "$STATE/wallpaper"
+    world_scene "$w" "$item" > "$STATE/scene"
+    [ "$(live_now)" = off ] && echo on > "$STATE/live"
+  else
+    echo "$item" > "$STATE/wallpaper"
+    echo picture > "$STATE/scene"
+  fi
+  FX=1 apply
 }
 
 scene() {
@@ -371,7 +467,7 @@ scene() {
     *) if grep -qx -- "$1" <<< "$(scene_list)"; then echo "$1" > "$STATE/scene"; [ "$(live_now)" = off ] && echo on > "$STATE/live"
        else echo "rice: scene is one of: none next prev ${list[*]}" >&2; return 1; fi ;;
   esac
-  apply && say "wallpaper: $(scene_now)"
+  FX=1 apply && say "wallpaper: $(scene_now)"
 }
 
 live() {
@@ -379,7 +475,6 @@ live() {
     on|off|always) echo "$1" > "$STATE/live"; apply && say "live wallpaper: $1" ;;
     toggle) if [ "$(live_now)" = off ]; then live on; else live off; fi ;;
     "") echo "$(live_now) $(scene_now)" ;;
-    next|prev) scene "$1" ;;                            # older key bindings
     *) if grep -qx -- "$1" <<< "$(scene_list)"; then scene "$1"
        else echo "rice: live is one of: on off always toggle" >&2; return 1; fi ;;
   esac
@@ -392,7 +487,7 @@ mode() {
     for i in "${!MODES[@]}"; do [ "${MODES[$i]}" = "$cur" ] && m=${MODES[$(( (i + 1) % ${#MODES[@]} ))]}; done
   fi
   case $m in
-    night|day|paper) echo "$m" > "$STATE/mode"; apply && say "mood: $m" ;;
+    night|paper) echo "$m" > "$STATE/mode"; FX=1 apply ;;
     "") mode_now ;;
     *) echo "rice: mode is one of: ${MODES[*]} next" >&2; return 1 ;;
   esac
@@ -410,10 +505,10 @@ art() {
   wall "$dir/$1-$3.png" && say "$1" "seed $3"
 }
 
-# One grid for everything that can be on the desktop: day/night, whether it moves, the scenes,
+# One grid for everything that can be on the desktop: whether it moves, the scenes,
 # the pictures. Thumbnails are made once and kept. The current choice is marked and preselected.
 pick() {
-  local list thumbs=() scenes=() sthumbs=() f i n choice cur=0 here first=2
+  local list thumbs=() scenes=() sthumbs=() f i n choice cur=0 here first=1
   mapfile -t list < <(wall_list)
   mapfile -t scenes < <(scene_list | grep -vx picture)   # "picture" is every picture tile below
   mkdir -p "$CACHE/thumbs"
@@ -430,7 +525,7 @@ pick() {
   wait
   find "$CACHE/thumbs" -name 'live-*' -mtime +10 -delete 2>/dev/null &   # frames of palettes long gone
 
-  # which tile is the current one (0 = day/night, 1 = live on/off, then the scenes, then the pictures)
+  # which tile is the current one (0 = live on/off, then the scenes, then the pictures)
   n=$(( ${#scenes[@]} + first ))
   here=$(scene_now)
   if [ "$here" != picture ]; then
@@ -439,8 +534,7 @@ pick() {
     for i in "${!list[@]}"; do [ "${list[$i]}" = "$(wall_setting)" ] && cur=$(( i + n )); done
   fi
   # rows are written straight into the pipe: "$(...)" would drop the NUL that separates name and icon
-  choice=$( { printf 'day / night\0icon\x1fweather-clear-night\n'
-              if [ "$(live_now)" = off ]; then printf 'live is off · turn on\0icon\x1fmedia-playback-start\n'
+  choice=$( { if [ "$(live_now)" = off ]; then printf 'live is off · turn on\0icon\x1fmedia-playback-start\n'
               else printf 'live is on · turn off\0icon\x1fmedia-playback-pause\n'; fi
               for i in "${!scenes[@]}"; do printf 'live · %s\0icon\x1f%s\n' "${scenes[$i]}" "${sthumbs[$i]}"; done
               for i in "${!list[@]}"; do f=${list[$i]##*/}; printf '%s\0icon\x1f%s\n' "${f%.*}" "${thumbs[$i]}"; done
@@ -448,8 +542,7 @@ pick() {
             } | rofi -dmenu -i -format i -p "󰸉" -theme grid -a "$cur" -selected-row "$cur" \
     -mesg "click or Enter to choose · wheel or two fingers to scroll · type to filter · your pictures: ~/Pictures/wallpapers")
   [ -n "$choice" ] || return 0
-  if [ "$choice" = 0 ]; then wall auto
-  elif [ "$choice" = 1 ]; then live toggle
+  if [ "$choice" = 0 ]; then live toggle
   elif [ "$choice" -lt "$n" ]; then scene "${scenes[$((choice - first))]}"
   elif [ "$choice" -ge $(( n + ${#list[@]} )) ]; then          # the folder tile: your own pictures go here
     mkdir -p "$PICTURES"; exec exo-open --launch FileManager "$PICTURES"
@@ -459,10 +552,10 @@ menu() {
   local cur choice tile
   cur=$(mode_now)
   tile() { printf "<span font='JetBrainsMono Nerd Font 24'>%s</span>\n%s" "$1" "$2"; }
-  choice=$(printf '%s\0' "$(tile 󰖔 night)" "$(tile 󰖨 day)" "$(tile 󰂺 paper)" "$(tile 󰸉 wallpaper)" "$(tile 󰊕 'math art')" "$(tile 󰝨 "live: $(live_now)")" \
+  choice=$(printf '%s\0' "$(tile 󰏘 theme)" "$(tile 󰂺 paper)" "$(tile 󰸉 wallpaper)" "$(tile 󰊕 'math art')" "$(tile 󰝨 "live: $(live_now)")" \
     | rofi -dmenu -sep '\0' -eh 4 -markup-rows -i -format i -theme tiles -theme-str 'window {width: 900px;} listview {columns: 6;}' -mesg "mood: <b>$cur</b>     wallpaper: <b>$(scene_now)</b>")
   case $choice in
-    0) mode night ;; 1) mode day ;; 2) mode paper ;; 3) pick ;; 4) art ;; 5) live toggle ;;
+    0) mode night ;; 1) mode paper ;; 2) if pgrep -x loka >/dev/null || pgrep -x quickshell >/dev/null; then "$HOME/.local/bin/loka-key" worldWalls; else pick; fi ;; 3) art ;; 4) live toggle ;;
   esac
 }
 
@@ -473,9 +566,11 @@ case "${1:-apply}" in
   scene)  shift; scene "$@" ;;
   live)   shift; live "$@" ;;
   mode)   shift; mode "$@" ;;
+  world)  shift; world "$@" ;;
+  world-walls) shift; world_walls "${1:-$(world_now)}" ;;
   art)    shift; art "$@" ;;
   menu)   menu ;;
-  status) echo "mood:      $(mode_now)"; echo "wallpaper: $(wall_now) ($(wall_setting))"; echo "scene:     $(scene_now)"; echo "live:      $(live_now)$([ -n "$(engine)" ] && echo ' (running)')"
+  status) echo "world:     $(world_now)"; echo "mood:      $(mode_now)"; echo "wallpaper: $(wall_now) ($(wall_setting))"; echo "scene:     $(scene_now)"; echo "live:      $(live_now)$([ -n "$(engine)" ] && echo ' (running)')"
           echo "shown:     $(cat "$CACHE/shown" 2>/dev/null)"
           evry stat 2>/dev/null | sed 's/^/files:     /' ;;
   help|-h|--help) sed -n '2,/^export PATH/p' "$0" | sed '$d; s/^# \{0,1\}//' ;;

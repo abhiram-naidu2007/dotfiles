@@ -28,9 +28,6 @@ aside { position: fixed; bottom: 30px; cursor: pointer; user-select: none; }
 #wild.hop #sprite { animation: hop .4s ease-out; }
 #wildname { margin: 0 0 8px; font-size: 14px; color: var(--soft); }
 #wildname b { color: var(--a); }
-#math { right: 40px; text-align: right; }
-#formula { margin: 0; font: 600 19px Inter, sans-serif; }
-#who { margin: 4px 0 0; font-size: 13px; font-style: italic; color: var(--faint); }
 @keyframes bob { 50% { transform: translateY(-7px); } }
 @keyframes hop { 40% { transform: translateY(-26px) scale(1.06); } }
 @media (prefers-reduced-motion: reduce) { #sprite { animation: none; } #curve { display: none; } }

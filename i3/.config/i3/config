@@ -11,10 +11,10 @@ include ~/.config/i3/colors.conf
 default_border pixel 2
 default_floating_border pixel 2
 hide_edge_borders none
-# 8 px everywhere: between windows, at screen edges, and around the bar (polybar offset 8)
+# 8 px everywhere: between windows, at screen edges, and around the bar (loka, or polybar when the shell is off)
 gaps inner 8
 gaps outer 0
-# polybar floats (override-redirect): 8 offset + 32 height; i3 adds the inner 8 below it
+# the bar floats (override-redirect): 8 offset + 32 height; i3 adds the inner 8 below it
 gaps top 40
 title_align center
 for_window [all] title_window_icon padding 4px
@@ -26,7 +26,7 @@ bindsym $mod+Return exec ghostty
 bindsym $mod+KP_Enter exec ghostty
 ## terminal (Ctrl+Alt+T)
 bindsym Control+Mod1+t exec ghostty
-## launcher: apps (Ctrl+Tab = next tab: files, calc, windows)
+## launcher: apps (Ctrl+Tab = next tab: files, web, calc, windows, keys)
 bindsym $mod+a exec ~/.config/rofi/scripts/launcher.sh apps
 ## launcher: apps
 bindsym $mod+space exec ~/.config/rofi/scripts/launcher.sh apps
@@ -51,7 +51,7 @@ bindsym $mod+b exec thorium-browser --new-window
 ## browser: choose profile (3 accounts)
 bindsym $mod+Shift+b exec ~/.config/i3/scripts/browser.sh
 ## WhatsApp (ZapFast: open / focus)
-bindsym $mod+z exec zapfast
+bindsym $mod+z exec --no-startup-id ~/.local/bin/loka-zapfast
 ## WhatsApp (ZapFast: quit, not just tray)
 bindsym $mod+Shift+z exec zapfast quit
 ## file manager
@@ -60,12 +60,12 @@ bindsym $mod+e exec exo-open --launch FileManager
 bindsym $mod+i exec ~/.config/i3/scripts/settings.sh
 
 # --- look: mood and wallpaper (rice --help) ---
-## mood: night -> day -> paper (reading)
-bindsym $mod+t exec ~/.local/bin/rice mode next
-## mood and wallpaper menu
-bindsym $mod+Shift+t exec ~/.local/bin/rice menu
-## wallpaper picker (colours follow the picture)
-bindsym $mod+Control+w exec ~/.local/bin/rice pick
+## worlds: pick a world (Meridian, Katha, Sakuga, Toon)
+bindsym $mod+t exec --no-startup-id ~/.local/bin/loka-key worlds
+## worlds: jump straight to the next world
+bindsym $mod+Shift+t exec --no-startup-id ~/.local/bin/loka-key worldNext
+## wallpapers of the current world (pictures and live)
+bindsym $mod+Control+w exec --no-startup-id ~/.local/bin/loka-key worldWalls
 ## draw a new mathematical wallpaper
 bindsym $mod+Control+a exec ~/.local/bin/rice art
 ## live wallpaper moves / holds still (rests while windows are open)
@@ -74,7 +74,7 @@ bindsym $mod+Control+d exec ~/.local/bin/rice live toggle
 bindsym $mod+Control+n exec ~/.local/bin/rice scene next
 
 ## power menu
-bindsym $mod+Escape exec ~/.config/i3/scripts/powermenu.sh
+bindsym $mod+Escape exec ~/.local/bin/loka-key powermenu
 ## lock screen
 bindsym $mod+g exec ~/dotfiles/lockscreen/lock.sh
 ## display menu (mirror / extend / monitor / laptop)
@@ -98,7 +98,7 @@ bindsym $mod+Control+s exec --no-startup-id ~/.config/i3/scripts/capture.sh menu
 ## screen recording: start (select an area) / stop
 bindsym $mod+Control+r exec --no-startup-id ~/.config/i3/scripts/capture.sh rec toggle
 ## clipboard history
-bindsym $mod+c exec --no-startup-id sh -c 'pgrep -x xfce4-clipman >/dev/null || { setsid xfce4-clipman >/dev/null 2>&1 & sleep 0.5; }; xfce4-popup-clipman'
+bindsym $mod+c exec --no-startup-id ~/.local/bin/loka-key clipboard
 ## drop-down terminal (same key hides it)
 bindsym $mod+grave exec --no-startup-id ~/.config/i3/scripts/dropterm.sh
 
@@ -242,9 +242,21 @@ for_window [class="Xfce4-appearance-settings|Xfce4-settings-manager"] floating e
 # Mirror to external monitor once at login (exec, not exec_always: a reload must not undo Super+Ctrl+E)
 exec --no-startup-id ~/.config/i3/scripts/display.sh auto
 exec_always --no-startup-id ~/.config/i3/scripts/autostart.sh
-# Wallpaper + colours once per login; the systemd timer swaps them at 06:00 / 18:00
+# Wallpaper + colours of the current world, once per login
 exec --no-startup-id ~/.local/bin/rice apply
 exec --no-startup-id sleep 3 && notify-send -i face-smile "(=^･ω･^=)ﾉ" "welcome back!"
 exec --no-startup-id xss-lock --transfer-sleep-lock -- ~/dotfiles/lockscreen/lock.sh
 exec --no-startup-id /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1
 exec --no-startup-id nm-applet
+
+## shell: control centre
+bindsym $mod+x exec --no-startup-id ~/.local/bin/loka-key controls
+## shell: notifications
+bindsym $mod+Shift+n exec --no-startup-id ~/.local/bin/loka-key notifications
+## shell: calendar
+bindsym $mod+y exec --no-startup-id ~/.local/bin/loka-key calendar
+## shell: do not disturb
+bindsym $mod+Shift+d exec --no-startup-id ~/.local/bin/loka-key dnd
+## shell: settings
+bindsym $mod+comma exec --no-startup-id ~/.local/bin/loka-key settings
+

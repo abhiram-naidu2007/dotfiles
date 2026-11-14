@@ -1,6 +1,6 @@
 /* The launcher: art on the left, four live tabs on the right.
    Apps (rofi drun) · Files (evry: every file on the disk, as you type) · Web (bookmarks, search) · Calc (qalc) · Windows · Keys (every key and command)
-   Opened by scripts/launcher.sh, which also picks the line of mathematics under the art. */
+   Opened by scripts/launcher.sh. */
 @import "config.rasi"
 
 configuration {

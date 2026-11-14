@@ -8,7 +8,7 @@ window-padding-y = 12
 window-padding-balance = true
 window-padding-color = extend
 window-decoration = false
-# 0.90 keeps text above 7:1 contrast even over the bright day wallpaper
+# 0.90 keeps text above 7:1 contrast even over the brightest world wallpaper
 background-opacity = 0.90
 cursor-style = bar
 cursor-style-blink = true
@@ -17,3 +17,4 @@ unfocused-split-opacity = 0.85
 copy-on-select = clipboard
 scrollback-limit = 10000000
 command = /usr/bin/fish
+config-file = ?opacity

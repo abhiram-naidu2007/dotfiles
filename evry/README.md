@@ -10,7 +10,7 @@ On an i5-13420H with ~865 000 entries: index 45 MB, built in 2.7 s; a query take
 Needs Rust 1.89+. For the rofi modes also gcc, rofi 2.0 headers (`rofi-dev`), `libglib2.0-dev`, `libx11-dev`.
 
 ```
-make install        # evry -> ~/.local/bin; files.so calc.so -> ~/.local/lib/rofi; act.sh -> ~/.local/lib/evry
+make install        # evry -> ~/.local/bin; files.so calc.so search.so mouseup -> ~/.local/lib/rofi; act.sh -> ~/.local/lib/evry
 evry index          # first index; refresh it from a timer or cron (see below)
 ```
 
@@ -71,14 +71,15 @@ OnUnitActiveSec=20min
 WantedBy=timers.target
 ```
 
-`systemctl --user enable --now evry-index.timer`. `evry index --if-older 900` rebuilds only when the index is older than 15 minutes.
+`systemctl --user enable --now evry-index.timer`. `evry index --if-older 900` rebuilds only when the index is older than 15 minutes (the rofi launcher uses 20 seconds).
 
 ## rofi
 
-Two modes that answer while you type:
+Three modes that answer while you type:
 
 - `files`: this search. `=2^10` calculates, `?words` searches the web.
 - `calc`: every keystroke goes to `qalc`; Enter copies the result.
+- `search`: one row that searches the web for what you typed (prefixes yt gh w te aw pkg maps tr mal dex ai) or opens it as an address. It calls `~/.config/rofi/scripts/websearch.sh`, so it needs the rofi package of these dotfiles.
 
 ```
 ROFI_PLUGIN_PATH=~/.local/lib/rofi rofi -modes files,calc -show files -sort -sorting-method fzf \

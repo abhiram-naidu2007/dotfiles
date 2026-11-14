@@ -1,8 +1,16 @@
 #!/bin/bash
-# osd.sh vol up|down|mute | mic mute | bri up|down  -> change + dunst progress popup
+# osd.sh vol up|down|mute | mic mute | bri up|down  -> change + OSD (loka island when the shell runs, dunstify otherwise)
 # Volume: wpctl (PipeWire). Brightness: logind D-Bus (no root / video group needed).
 STEP=5
 notify() { # tag icon title value text
+    if [ -e "$HOME/.config/loka/shell-on" ] && pgrep -x loka >/dev/null; then
+        [ "$1" = bri ] && "$HOME/.local/bin/loka" msg brightness "$4" >/dev/null 2>&1
+        return
+    fi
+    if [ -e "$HOME/.config/loka/shell-on" ] && pgrep -x quickshell >/dev/null; then
+        [ "$1" = bri ] && qs ipc -p "$HOME/.config/panacea" call pill brightness "$4" >/dev/null 2>&1
+        return
+    fi
     dunstify -r 9911 -u normal -a osd -h "string:x-dunst-stack-tag:osd-$1" -h "int:value:$4" -i "$2" "$3" "$5"
 }
 vol() {

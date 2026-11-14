@@ -1,6 +1,6 @@
 // mathwall: live wallpapers, drawn by the GPU and asleep whenever they are not in view.
 //
-// Three kinds of scene:
+// Five kinds of scene:
 //   orbits   one long orbit of a chaotic system (Aizawa, Lorenz, Thomas, Halvorsen, Dadras),
 //            240 000 points drawn as a single thin additive line that turns slowly; pulses of
 //            light travel along it the way the system moves
@@ -9,6 +9,8 @@
 //   shaders  every *.frag file in ~/.local/share/mathwall/scenes: one function that colours a
 //            pixel (temple, chladni ...). Drop a new file there and it
 //            is a new wallpaper; _common.glsl in that folder documents what a scene can use.
+//   videos   an .mp4/.mkv/.webm/.mov file (a world's live wallpaper), looped
+//   pictures a still picture, shown so a change of wallpaper can cross-fade
 // Lines and points are summed into a floating-point buffer and tone-mapped, so crowded places
 // glow instead of clipping. Colours are the desktop palette (~/.cache/theme/colors.sh); on a
 // light mood lines are ink that darkens the paper.
@@ -19,7 +21,7 @@
 //   - it sleeps on battery and while the screen is off
 //   - 30 frames a second
 // Flags: --always (animate behind windows too)  --battery (also on battery)  --fps N
-//        --scene NAME  --cycle SECONDS (move to the next scene; 0 = never; default 900)
+//        --scene NAME|FILE  --from FILE (the picture or video to fade from)  --cycle SECONDS (move to the next scene; 0 = never; default 900)
 //        --snapshot FILE.ppm [--size WxH] [--at SECONDS]
 //                                           draw one frame into a file and exit (thumbnails);
 //                                           --at picks the moment of the scene (default 40)
@@ -50,6 +52,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -57,6 +60,7 @@
 #define CURVE_POINTS 16000
 #define DOT_POINTS 2600
 #define FADE_SECONDS 0.6
+static const double TRANS_TIMES[4] = {0.8, 0.75, 0.5, 1.25};
 
 typedef void (*Flow)(const double *p, double *d);
 
@@ -81,7 +85,7 @@ static void dadras(const double *p, double *d) {
     d[0] = y - 3 * x + 2.7 * y * z; d[1] = 1.7 * y - x * z + z; d[2] = 2 * x * y - 9 * z;
 }
 
-enum { ORBIT, CURVE, DOTS, SHADER };
+enum { ORBIT, CURVE, DOTS, SHADER, VIDEO, PICTURE };
 typedef struct {
     char name[48];
     int kind;
@@ -101,6 +105,22 @@ static Scene scenes[64] = {
 };
 static int nscenes = 7;
 static char scene_dir[512];
+
+static FILE *vpipe;
+static Scene *playing;
+static int yuv_ready, vw, vh, vyuv, screen_w = 1920, screen_h = 1080, file_slot = -1;
+static unsigned char *vbuf;
+
+static int has_ext(const char *name, const char *const *exts) {
+    const char *dot = strrchr(name, '.');
+    if (!dot) return 0;
+    for (; *exts; exts++) if (!strcasecmp(dot, *exts)) return 1;
+    return 0;
+}
+static const char *const VIDEO_EXTS[] = {".mp4", ".mkv", ".webm", ".mov", NULL};
+static const char *const PICTURE_EXTS[] = {".png", ".jpg", ".jpeg", ".webp", ".ppm", NULL};
+
+static int file_scene(const char *path);
 
 static volatile sig_atomic_t quit_flag, reload_flag, next_flag;
 static void on_signal(int sig) {
@@ -143,13 +163,17 @@ static void find_scene_files(void) {
     struct dirent *e;
     while ((e = readdir(d)) && nscenes < 64) {
         size_t len = strlen(e->d_name);
-        if (e->d_name[0] == '_' || e->d_name[0] == '.' || len < 6 || len > 40 || strcmp(e->d_name + len - 5, ".frag")) continue;
+        if (e->d_name[0] == '_' || e->d_name[0] == '.' || len < 5 || len > 40) continue;
+        const char *dot = strrchr(e->d_name, '.');
+        int video = dot && (!strcmp(dot, ".mp4") || !strcmp(dot, ".mkv") || !strcmp(dot, ".webm") || !strcmp(dot, ".mov"));
+        if (!video && strcmp(e->d_name + len - 5, ".frag")) continue;
         Scene *s = &scenes[nscenes++];
         memset(s, 0, sizeof *s);
-        snprintf(s->name, sizeof s->name, "%.*s", (int)len - 5, e->d_name);
+        snprintf(s->name, sizeof s->name, "%.*s", (int)(dot - e->d_name), e->d_name);
         snprintf(s->path, sizeof s->path, "%s", e->d_name);
-        s->kind = SHADER;
+        s->kind = video ? VIDEO : SHADER;
         s->scale = 1;
+        if (video) { s->own = 1; continue; }
         char *text = slurp(scene_dir, e->d_name);       // directives sit in the comments at the top
         if (text) {
             char *body = strstr(text, "\nvec"), *p;
@@ -257,7 +281,7 @@ static const char *const COLOUR_UNIFORMS[NCOL] = {"u_bg", "u_deep", "u_fg", "u_a
 static float srgb[NCOL][3] = {{0.07f, 0.075f, 0.11f}, {0.03f, 0.04f, 0.07f}, {0.87f, 0.88f, 0.92f}, {0.64f, 0.74f, 1.0f}, {0.95f, 0.62f, 0.6f},
                               {0.96f, 0.6f, 0.62f}, {0.54f, 0.79f, 0.55f}, {0.84f, 0.7f, 0.38f}, {0.53f, 0.73f, 0.99f}, {0.84f, 0.63f, 0.89f}, {0.44f, 0.78f, 0.8f}};
 static float linear[NCOL][3];
-static int light_mood;
+static int light_mood, world_style;
 
 static void load_palette(void) {
     char path[512], line[256], key[64], val[128];
@@ -266,6 +290,7 @@ static void load_palette(void) {
     while (f && fgets(line, sizeof line, f)) {
         if (sscanf(line, "%63[^=]='%127[^']'", key, val) != 2) continue;
         if (!strcmp(key, "variant")) light_mood = !strcmp(val, "light");
+        if (!strcmp(key, "world")) world_style = !strcmp(val, "meridian") ? 1 : !strcmp(val, "sakuga") ? 2 : !strcmp(val, "katha") ? 3 : 0;
         for (int c = 0; c < NCOL; c++) {
             unsigned r, g, b;
             if (!strcmp(key, COLOUR_KEYS[c]) && sscanf(val, "#%2x%2x%2x", &r, &g, &b) == 3) {
@@ -333,11 +358,66 @@ static const char *SHOW_FS =      // a finished picture, scaled to the screen an
     "out vec4 frag;\n"
     "void main() { frag = vec4(mix(u_bg, texture(u_tex, gl_FragCoord.xy / u_res).rgb, u_fade), 1.0); }\n";
 
+static const char *YUV_FS =
+    "#version 330 core\n"
+    "uniform sampler2D u_y, u_u, u_v; uniform vec2 u_res, u_src;\n"
+    "out vec4 frag;\n"
+    "void main() {\n"
+    "  vec2 uv = gl_FragCoord.xy / u_res;\n"
+    "  float sa = u_src.x / u_src.y, da = u_res.x / u_res.y;\n"
+    "  vec2 k = sa > da ? vec2(da / sa, 1.0) : vec2(1.0, sa / da);\n"
+    "  uv = 0.5 + (uv - 0.5) * k; uv.y = 1.0 - uv.y;\n"
+    "  float y = 1.1643 * (texture(u_y, uv).r - 0.0625), u = texture(u_u, uv).r - 0.5, v = texture(u_v, uv).r - 0.5;\n"
+    "  frag = vec4(clamp(vec3(y + 1.7927 * v, y - 0.2132 * u - 0.5329 * v, y + 2.1124 * u), 0.0, 1.0), 1.0);\n"
+    "}\n";
+
 static const char *PRESENT_FS =   // what reaches the screen: the frame just drawn, cross-faded from the one kept at the last change
     "#version 330 core\n"
     "uniform sampler2D u_new, u_old; uniform vec2 u_res; uniform float u_fade;\n"
     "out vec4 frag;\n"
     "void main() { vec2 uv = gl_FragCoord.xy / u_res; frag = vec4(mix(texture(u_old, uv).rgb, texture(u_new, uv).rgb, u_fade), 1.0); }\n";
+
+static const char *TRANS_FS =
+    "#version 330 core\n"
+    "uniform sampler2D u_new, u_old; uniform vec2 u_res; uniform float u_t; uniform int u_style;\n"
+    "out vec4 frag;\n"
+    "float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n"
+    "float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);\n"
+    "  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }\n"
+    "float inout3(float t) { return t < 0.5 ? 4.0 * t * t * t : 1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0; }\n"
+    "void main() {\n"
+    "  vec2 uv = gl_FragCoord.xy / u_res;\n"
+    "  vec2 p = (gl_FragCoord.xy - vec2(0.5 * u_res.x, u_res.y)) / u_res.y;\n"
+    "  float reach = length(vec2(0.5 * u_res.x / u_res.y, 1.0)) + 0.15;\n"
+    "  vec3 od = texture(u_old, uv).rgb, nw = texture(u_new, uv).rgb, c;\n"
+    "  if (u_style == 1) {\n"
+    "    float row = floor((1.0 - uv.y) * u_res.y / 6.0) * 6.0 / u_res.y;\n"
+    "    float front = u_t * 1.06;\n"
+    "    float on = step(row, front - 0.002);\n"
+    "    float beam = exp(-abs((1.0 - uv.y) - front) * 220.0);\n"
+    "    c = mix(od, nw, on) + vec3(0.9, 0.12, 0.13) * beam * (1.0 - u_t) * 0.9;\n"
+    "  } else if (u_style == 2) {\n"
+    "    float e = 1.0 - pow(1.0 - u_t, 3.0);\n"
+    "    float d = (uv.x * 0.7 + (1.0 - uv.y) * 0.3) - (e * 1.3 - 0.15);\n"
+    "    float lines = step(0.92, hash(vec2(floor((uv.y + uv.x * 0.4) * 140.0), 3.0))) * smoothstep(0.08, 0.0, abs(d));\n"
+    "    c = mix(nw, od, step(0.0, d)) + vec3(lines);\n"
+    "    c = mix(c, vec3(1.0), smoothstep(0.10, 0.0, u_t) * 0.85);\n"
+    "  } else if (u_style == 3) {\n"
+    "    float e = inout3(u_t);\n"
+    "    float n = noise(p * 7.0) * 0.6 + noise(p * 19.0) * 0.4;\n"
+    "    float r = e * (reach + 0.25) - 0.12 + (n - 0.5) * 0.22;\n"
+    "    float dist = length(p * vec2(1.0, 1.25));\n"
+    "    float wet = smoothstep(r, r - 0.05, dist);\n"
+    "    float rim = smoothstep(0.05, 0.0, abs(dist - r)) * (1.0 - u_t);\n"
+    "    c = mix(od, nw, wet) * (1.0 - rim * 0.55);\n"
+    "  } else {\n"
+    "    float e = u_t < 0.75 ? inout3(u_t / 0.75) * 1.04 : 1.04 - 0.04 * sin((u_t - 0.75) / 0.25 * 1.5708);\n"
+    "    float r = e * reach;\n"
+    "    float edge = 1.0 - smoothstep(r - 0.01, r, length(p));\n"
+    "    c = mix(od * (1.0 - 0.3 * e), nw, edge);\n"
+    "  }\n"
+    "  frag = vec4(clamp(c, 0.0, 1.0), 1.0);\n"
+    "}\n";
 
 static GLuint compile(GLenum type, const char *src, const char *what) {
     GLuint s = glCreateShader(type);
@@ -381,6 +461,85 @@ static GLuint scene_program(Scene *s) {
     } else fprintf(stderr, "mathwall: %s: missing _common.glsl, _main.glsl or the scene itself in %s\n", s->name, scene_dir);
     free(head); free(body); free(tail);
     return s->prog;
+}
+
+static void close_video(void) {
+    if (vpipe) pclose(vpipe);
+    vpipe = NULL;
+    playing = NULL;
+}
+
+static int open_video(Scene *s) {
+    close_video();
+    if (s->kind == VIDEO && playing != s) yuv_ready = 0;
+    char cmd[3072], line[128], full[1200];
+    if (s->path[0] == '/') snprintf(full, sizeof full, "%s", s->path);
+    else snprintf(full, sizeof full, "%s/%s", scene_dir, s->path);
+    if (strchr(full, '\'')) { fprintf(stderr, "mathwall: a quote in %s\n", full); return 0; }
+    snprintf(cmd, sizeof cmd, "ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate -of csv=p=0 '%s'", full);
+    FILE *p = popen(cmd, "r");
+    int w = 0, h = 0, num = 0, den = 1;
+    if (p) {
+        if (fgets(line, sizeof line, p)) sscanf(line, "%d,%d,%d/%d", &w, &h, &num, &den);
+        pclose(p);
+    }
+    if (w <= 0 || h <= 0) { fprintf(stderr, "mathwall: cannot read %s\n", s->path); return 0; }
+    if (s->kind == VIDEO) {
+        if (den > 0 && num > 0) s->fps = (num + den / 2) / den;
+        w &= ~1; h &= ~1;
+        vyuv = 1;
+        if (w != vw || h != vh || !vbuf) { free(vbuf); vbuf = malloc((size_t)w * h * 3 / 2); vw = w; vh = h; }
+        snprintf(cmd, sizeof cmd, "ffmpeg -nostdin -loglevel quiet -threads 1 -filter_threads 1 -flags low_delay -i '%s' -an -vf crop=%d:%d:0:0 -f rawvideo -pix_fmt yuv420p -", full, w, h);
+        playing = s;
+    } else {
+        w = screen_w; h = screen_h;
+        vyuv = 0;
+        free(vbuf); vbuf = malloc((size_t)w * h * 3); vw = w; vh = h;
+        snprintf(cmd, sizeof cmd, "ffmpeg -nostdin -loglevel quiet -i '%s' -an -vf scale=%d:%d:force_original_aspect_ratio=increase:flags=lanczos,crop=%d:%d,vflip -frames:v 1 -f rawvideo -pix_fmt rgb24 -", full, w, h, w, h);
+    }
+    vpipe = popen(cmd, "r");
+    return vpipe != NULL;
+}
+
+static int read_video(void) {
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (!vpipe) return 0;
+        size_t need = vyuv ? (size_t)vw * vh * 3 / 2 : (size_t)vw * vh * 3, got = 0;
+        while (got < need) {
+            size_t n = fread(vbuf + got, 1, need - got, vpipe);
+            if (!n) break;
+            got += n;
+        }
+        if (got == need) return 1;
+        if (!vyuv || !playing || got) return 0;
+        Scene *again = playing;
+        if (!open_video(again)) return 0;
+    }
+    return 0;
+}
+
+static void upload_frame(GLuint rgb_tex, const GLuint *yuv_tex, int fresh) {
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    if (!vyuv) {
+        glBindTexture(GL_TEXTURE_2D, rgb_tex);
+        if (fresh) glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, vw, vh, 0, GL_RGB, GL_UNSIGNED_BYTE, vbuf);
+        else glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, vw, vh, GL_RGB, GL_UNSIGNED_BYTE, vbuf);
+        return;
+    }
+    yuv_ready = 1;
+    const unsigned char *plane = vbuf;
+    for (int i = 0; i < 3; i++) {
+        int w = i ? vw / 2 : vw, h = i ? vh / 2 : vh;
+        glBindTexture(GL_TEXTURE_2D, yuv_tex[i]);
+        if (fresh) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, plane);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        } else glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RED, GL_UNSIGNED_BYTE, plane);
+        plane += (size_t)w * h;
+    }
 }
 
 // column-major 4x4: out = a * b
@@ -466,7 +625,7 @@ static void remember_scene(int scene) {
 
 // The scene named in $XDG_RUNTIME_DIR/mathwall.goto (the file is used up), or -1.
 static int wanted_scene(void) {
-    char path[512], name[64] = "";
+    char path[512], name[600] = "";
     const char *dir = getenv("XDG_RUNTIME_DIR");
     snprintf(path, sizeof path, "%s/mathwall.goto", dir ? dir : "/tmp");
     FILE *f = fopen(path, "r");
@@ -475,13 +634,32 @@ static int wanted_scene(void) {
     fclose(f);
     unlink(path);
     name[strcspn(name, "\n")] = 0;
+    if (name[0] == '/') return file_scene(name);
     for (int i = 0; i < nscenes; i++) if (!strcmp(scenes[i].name, name)) return i;
     return -1;
 }
 
+static int file_scene(const char *path) {
+    int kind = has_ext(path, VIDEO_EXTS) ? VIDEO : has_ext(path, PICTURE_EXTS) ? PICTURE : -1;
+    if (kind < 0 || access(path, R_OK)) { fprintf(stderr, "mathwall: cannot show %s\n", path); return -1; }
+    if (file_slot < 0) {
+        if (nscenes >= 64) return -1;
+        file_slot = nscenes++;
+    }
+    Scene *s = &scenes[file_slot];
+    memset(s, 0, sizeof *s);
+    const char *base = strrchr(path, '/');
+    snprintf(s->name, sizeof s->name, "%.47s", base ? base + 1 : path);
+    snprintf(s->path, sizeof s->path, "%s", path);
+    s->kind = kind;
+    s->scale = 1;
+    s->own = 1;
+    return file_slot;
+}
+
 int main(int argc, char **argv) {
     int fps = 30, fps_given = 0, always = 0, battery = 0, scene = -1, snap_w = 0, snap_h = 0, bench = 0, list = 0, force_mood = -1;
-    const char *snapshot = NULL, *wanted = NULL;
+    const char *snapshot = NULL, *wanted = NULL, *from = NULL;
     double cycle = 900, at = 40;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--always")) always = 1;
@@ -496,8 +674,10 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &snap_w, &snap_h);
         else if (!strcmp(argv[i], "--scene") && i + 1 < argc) wanted = argv[++i];
         else if (!strcmp(argv[i], "--mood") && i + 1 < argc) force_mood = !strcmp(argv[++i], "light");
+        else if (!strcmp(argv[i], "--from") && i + 1 < argc) from = argv[++i];
         else {
-            fprintf(stderr, "usage: mathwall [--always] [--battery] [--fps N] [--cycle SECONDS] [--scene NAME]\n"
+            fprintf(stderr, "usage: mathwall [--always] [--battery] [--fps N] [--cycle SECONDS] [--scene NAME|/path/picture-or-video]\n"
+                            "                [--from /path/picture]\n"
                             "                [--snapshot FILE.ppm [--size WxH]] [--bench N] [--list | --list-own]\n");
             return 2;
         }
@@ -508,8 +688,9 @@ int main(int argc, char **argv) {
             if (list == 1 || scenes[k].own) puts(scenes[k].name);
         return 0;
     }
-    for (int k = 0; wanted && k < nscenes; k++)
+    for (int k = 0; wanted && wanted[0] != '/' && k < nscenes; k++)
         if (!strcmp(wanted, scenes[k].name)) scene = k;
+    if (wanted && wanted[0] == '/') scene = file_scene(wanted);
     if (wanted && scene < 0) { fprintf(stderr, "mathwall: no scene called %s (see --list)\n", wanted); return 2; }
     if (fps < 1) fps = 1;
     if (fps > 120) fps = 120;
@@ -530,6 +711,7 @@ int main(int argc, char **argv) {
     A_DESKTOP = XInternAtom(dpy, "_NET_WM_DESKTOP", False);
     int W = DisplayWidth(dpy, screen), H = DisplayHeight(dpy, screen);
     if (snapshot && snap_w > 0 && snap_h > 0) { W = snap_w; H = snap_h; }
+    screen_w = W; screen_h = H;
 
     static const int want[] = {GLX_X_RENDERABLE, True, GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT, GLX_RENDER_TYPE, GLX_RGBA_BIT,
                                GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, GLX_DOUBLEBUFFER, True, None};
@@ -551,12 +733,8 @@ int main(int argc, char **argv) {
     Atom desktop = XInternAtom(dpy, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
     XChangeProperty(dpy, win, XInternAtom(dpy, "_NET_WM_WINDOW_TYPE", False), XA_ATOM, 32, PropModeReplace, (unsigned char *)&desktop, 1);
     XShapeCombineRectangles(dpy, win, ShapeInput, 0, 0, NULL, 0, ShapeSet, Unsorted);
-    if (!offscreen) {
-        XSelectInput(dpy, root, StructureNotifyMask);
-        XLowerWindow(dpy, win);
-        XMapWindow(dpy, win);
-        XLowerWindow(dpy, win);
-    }
+    if (!offscreen) XSelectInput(dpy, root, StructureNotifyMask);
+    int mapped = offscreen;
 
     typedef GLXContext (*CreateContext)(Display *, GLXFBConfig, GLXContext, Bool, const int *);
     CreateContext create = (CreateContext)glXGetProcAddressARB((const GLubyte *)"glXCreateContextAttribsARB");
@@ -569,8 +747,13 @@ int main(int argc, char **argv) {
     if (swap_interval) swap_interval(dpy, win, 0);      // paced by the sleep below, not by the 144 Hz panel
 
     GLuint points = program(POINT_VS, POINT_FS, "figure shader"), tone = program(SCREEN_VS, TONE_FS, "tone shader"),
-           show = program(SCREEN_VS, SHOW_FS, "show shader"), present = program(SCREEN_VS, PRESENT_FS, "present shader");
-    if (!points || !tone || !show) return 1;
+           show = program(SCREEN_VS, SHOW_FS, "show shader"), present = program(SCREEN_VS, PRESENT_FS, "present shader"),
+           trans = program(SCREEN_VS, TRANS_FS, "transition shader"), yuv = program(SCREEN_VS, YUV_FS, "video shader");
+    GLuint yuv_tex[3];
+    glGenTextures(3, yuv_tex);
+    int changing = 0;
+#define START_CHANGE() do { changing = 1; } while (0)
+    if (!points || !tone || !show || !trans || !yuv) return 1;
     GLuint vao, vbo, empty_vao, fbo, sum, art_fbo, art_tex, final_fbo, frames_tex[2], shot_fbo = 0, shot_tex = 0;
     verts = malloc(sizeof(float) * 5 * POINTS);
     glGenVertexArrays(1, &vao); glBindVertexArray(vao);
@@ -626,9 +809,35 @@ int main(int argc, char **argv) {
     // Every scene starts at the same moment as its still (--snapshot), fully shown: `rice` puts that
     // still on the root window, so the wallpaper starts to move without any jump.
     double clock = at, fade = 1, fade_dir = 1;
-    if (!offscreen) remember_pid();
+    if (from && !offscreen) {
+        int was = file_scene(from);
+        if (was >= 0 && open_video(&scenes[was]) && read_video()) {
+            glBindTexture(GL_TEXTURE_2D, art_tex);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, vw, vh, 0, GL_RGB, GL_UNSIGNED_BYTE, vbuf);
+            glBindFramebuffer(GL_FRAMEBUFFER, final_fbo);
+            glViewport(0, 0, W, H);
+            glUseProgram(show);
+            glUniform2f(glGetUniformLocation(show, "u_res"), (float)W, (float)H);
+            glUniform3fv(glGetUniformLocation(show, "u_bg"), 1, srgb[C_BG]);
+            glUniform1f(glGetUniformLocation(show, "u_fade"), 1.0f);
+            glBindVertexArray(empty_vao);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            KEEP_FRAME();
+            fade = 0;
+            START_CHANGE();
+        }
+        close_video();
+        file_slot = -1;
+        nscenes--;
+        if (wanted && wanted[0] == '/') scene = file_scene(wanted);
+    }
+    int passing = scene >= 0 && scenes[scene].kind == PICTURE;
+    if (!offscreen && !passing) remember_pid();
     double last = now_seconds(), checked = 0, scene_age = 0, bench_start = 0;
-    int moving = 1, redraw = 1, pending = scene, art_w = 0, art_h = 0, frames = 0;
+    int moving = 1, redraw = 1, pending = scene, art_w = 0, art_h = 0, frames = 0, shown_once = 0, trans_frames = 0;
+    double video_at = 0, trans_worst = 0, trans_last = 0;
+    const char *stats = getenv("MATHWALL_STATS");
     scene = -1;
     while (!quit_flag) {
         // -- enter the pending scene (at start, and at the dark middle of a fade)
@@ -638,12 +847,19 @@ int main(int argc, char **argv) {
                 pending = (pending + 1) % nscenes;          // a scene that does not compile is skipped
             scene = pending; pending = -1;
             last = now_seconds();                        // compiling the scene took a while: the fade starts now, not then
-            if (!offscreen) remember_scene(scene);       // a snapshot or benchmark must not pose as the wallpaper
+            if (!offscreen && !passing) remember_scene(scene);       // a snapshot or benchmark must not pose as the wallpaper
             if (scenes[scene].kind == ORBIT) {
                 fill_orbit(&scenes[scene]);
                 glBindBuffer(GL_ARRAY_BUFFER, vbo);
                 glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 5 * nverts, verts);
             }
+            int filmed = scenes[scene].kind == VIDEO || scenes[scene].kind == PICTURE;
+            if (!filmed) close_video();
+            if (filmed && open_video(&scenes[scene]) && read_video()) {
+                art_w = vw; art_h = vh;
+                upload_frame(art_tex, yuv_tex, 1);
+            }
+            if (scenes[scene].kind == PICTURE) close_video();
             if (scenes[scene].kind == SHADER) {
                 int w = (int)(W * scenes[scene].scale), h = (int)(H * scenes[scene].scale);
                 if (w != art_w || h != art_h) {
@@ -685,7 +901,7 @@ int main(int argc, char **argv) {
             memcpy(before, srgb, sizeof before);
             reload_flag = 0; load_palette(); if (force_mood >= 0) light_mood = force_mood; redraw = 1;
             int recoloured = memcmp(before, srgb, sizeof before) || mood_before != light_mood;
-            if (recoloured) { KEEP_FRAME(); fade = 0; fade_dir = 1; }                       // new colours: cross-fade
+            if (recoloured) { KEEP_FRAME(); fade = 0; fade_dir = 1; changing = 0; }                       // new colours: cross-fade
         }
         if (next_flag || (cycle > 0 && scene_age > cycle && moving)) {
             int to = next_flag ? wanted_scene() : -1;    // a scene asked for by name, else the next one
@@ -693,6 +909,7 @@ int main(int argc, char **argv) {
             next_flag = 0; scene_age = 0;
             pending = to >= 0 ? to : (scene + 1) % nscenes;
             KEEP_FRAME(); fade = 0;                      // cross-fade from what is on screen now
+            START_CHANGE();
         }
         int fading = (fade_dir > 0 && fade < 1) || fade_dir < 0;
         if (!moving && !fading && !redraw) {             // nothing to do: sleep until X or a signal wakes us
@@ -704,13 +921,39 @@ int main(int argc, char **argv) {
         if (dt > 0.25) dt = 0.25;
         if (bench) dt = 1.0 / 30;
         if (moving) { clock += dt; scene_age += dt; }
-        if (!offscreen) fade += fade_dir * dt / FADE_SECONDS;
+        if (!offscreen) fade += fade_dir * dt / (changing ? TRANS_TIMES[world_style] : FADE_SECONDS);
         if (fade > 1) fade = 1;
         if (fade < 0) fade = 0;
         float ease = (float)(fade * fade * (3 - 2 * fade));
         GLuint target = offscreen ? shot_fbo : 0;
 
-        if (s->kind == SHADER) {
+        if (s->kind == VIDEO || s->kind == PICTURE) {
+            if (s->kind == VIDEO && moving && t - video_at >= 1.0 / (s->fps > 0 ? s->fps : 30) - 0.002) {
+                video_at = t;
+                if (read_video()) upload_frame(art_tex, yuv_tex, 0);
+            }
+            glBindFramebuffer(GL_FRAMEBUFFER, final_fbo);
+            glViewport(0, 0, W, H);
+            glDisable(GL_BLEND);
+            if (s->kind == VIDEO && vyuv && yuv_ready) {
+                glUseProgram(yuv);
+                for (int i = 0; i < 3; i++) { glActiveTexture(GL_TEXTURE0 + i); glBindTexture(GL_TEXTURE_2D, yuv_tex[i]); }
+                glActiveTexture(GL_TEXTURE0);
+                glUniform1i(glGetUniformLocation(yuv, "u_y"), 0);
+                glUniform1i(glGetUniformLocation(yuv, "u_u"), 1);
+                glUniform1i(glGetUniformLocation(yuv, "u_v"), 2);
+                glUniform2f(glGetUniformLocation(yuv, "u_res"), (float)W, (float)H);
+                glUniform2f(glGetUniformLocation(yuv, "u_src"), (float)vw, (float)vh);
+            } else {
+                glUseProgram(show);
+                glBindTexture(GL_TEXTURE_2D, art_tex);
+                glUniform2f(glGetUniformLocation(show, "u_res"), (float)W, (float)H);
+                glUniform3fv(glGetUniformLocation(show, "u_bg"), 1, srgb[C_BG]);
+                glUniform1f(glGetUniformLocation(show, "u_fade"), s->kind == VIDEO ? 0.0f : 1.0f);
+            }
+            glBindVertexArray(empty_vao);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+        } else if (s->kind == SHADER) {
             glBindFramebuffer(GL_FRAMEBUFFER, art_fbo);
             glViewport(0, 0, art_w, art_h);
             glDisable(GL_BLEND);
@@ -784,17 +1027,43 @@ int main(int argc, char **argv) {
             glDrawArrays(GL_TRIANGLES, 0, 3);
         }
 
+        if (!mapped) {
+            XSelectInput(dpy, win, ExposureMask | StructureNotifyMask);
+            XLowerWindow(dpy, win);
+            XMapWindow(dpy, win);
+            XLowerWindow(dpy, win);
+            XSync(dpy, False);
+            for (double until = now_seconds() + 0.5; now_seconds() < until;) {
+                XEvent ev;
+                if (XCheckTypedWindowEvent(dpy, win, MapNotify, &ev)) break;
+                struct timespec nap = {0, 2000000};
+                nanosleep(&nap, NULL);
+            }
+            mapped = 1;
+        }
         // to the screen: the new frame over the kept one
         glBindFramebuffer(GL_FRAMEBUFFER, target);
         glViewport(0, 0, W, H);
         glDisable(GL_BLEND);
-        glUseProgram(present);
-        glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, kept_tex);
-        glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, final_tex);
-        glUniform1i(glGetUniformLocation(present, "u_new"), 0);
-        glUniform1i(glGetUniformLocation(present, "u_old"), 3);
-        glUniform2f(glGetUniformLocation(present, "u_res"), (float)W, (float)H);
-        glUniform1f(glGetUniformLocation(present, "u_fade"), ease);
+        if (changing && fade < 1) {
+            glUseProgram(trans);
+            glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, kept_tex);
+            glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, final_tex);
+            glUniform1i(glGetUniformLocation(trans, "u_new"), 0);
+            glUniform1i(glGetUniformLocation(trans, "u_old"), 3);
+            glUniform2f(glGetUniformLocation(trans, "u_res"), (float)W, (float)H);
+            glUniform1f(glGetUniformLocation(trans, "u_t"), (float)fade);
+            glUniform1i(glGetUniformLocation(trans, "u_style"), world_style);
+        } else {
+            if (changing) changing = 0;
+            glUseProgram(present);
+            glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, kept_tex);
+            glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, final_tex);
+            glUniform1i(glGetUniformLocation(present, "u_new"), 0);
+            glUniform1i(glGetUniformLocation(present, "u_old"), 3);
+            glUniform2f(glGetUniformLocation(present, "u_res"), (float)W, (float)H);
+            glUniform1f(glGetUniformLocation(present, "u_fade"), ease);
+        }
         glBindVertexArray(empty_vao);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
@@ -820,13 +1089,26 @@ int main(int argc, char **argv) {
         }
         glXSwapBuffers(dpy, win);
         redraw = 0;
+        if (stats) {
+            double nowt = now_seconds();
+            if (changing && fade < 1) {
+                if (trans_frames++ > 1 && nowt - trans_last > trans_worst) trans_worst = nowt - trans_last;
+                trans_last = nowt;
+            } else if (trans_frames) {
+                fprintf(stderr, "mathwall: transition %d frames, worst %.1f ms\n", trans_frames, trans_worst * 1000);
+                trans_frames = 0; trans_worst = 0;
+            }
+        }
+        if (!shown_once) { shown_once = 1; puts("up"); fflush(stdout); }
+        if (!changing && fade >= 1 && s->kind == PICTURE) { glFinish(); break; }
 
-        double spent = now_seconds() - t, frame = 1.0 / (s->fps > 0 && !fps_given ? s->fps : fps);
+        double spent = now_seconds() - t, frame = changing && fade < 1 ? 1.0 / 120 : 1.0 / (s->fps > 0 && !fps_given ? s->fps : fps);
         if (spent < frame) {
             struct timespec nap = {0, (long)((frame - spent) * 1e9)};
             nanosleep(&nap, NULL);
         }
     }
+    close_video();
     glXMakeCurrent(dpy, None, NULL);
     XDestroyWindow(dpy, win);
     XCloseDisplay(dpy);

@@ -13,7 +13,7 @@
   <nav id="links"></nav>
 </main>
 <aside id="wild" title="another one"><canvas id="sprite"></canvas><p id="wildname"></p></aside>
-<aside id="math" title="another one"><p id="formula"></p><p id="who"></p></aside>
+
 <script src="data.js"></script>
 <script src="newtab.js"></script>
 </html>

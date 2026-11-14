@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Data for the browser's new-tab page: Pokémon sprites as pixel grids, and the lines of mathematics.
+"""Data for the browser's new-tab page: Pokémon sprites as pixel grids.
 
   sprites.py OUT.js [COUNT]
 
 Reads the terminal sprites in ~/.local/share/pokemon-colorscripts (half-block characters with
 24-bit colours: each character is two pixels, one above the other) and writes
   const SPRITES = [{n: name, w, h, p: [colours], d: "one character per pixel"}, ...]
-  const MATH = [[formula, name], ...]
 COUNT (default 386, the first three generations) is how many sprites are included.
 """
 import json, re, sys
@@ -14,7 +13,6 @@ from pathlib import Path
 
 HOME = Path.home()
 SPRITES = HOME / ".local/share/pokemon-colorscripts"
-MATH = HOME / ".local/share/rice/math.txt"
 TOKEN = re.compile(r"\x1b\[([0-9;]*)m|(.)", re.S)
 DIGITS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -66,11 +64,9 @@ def main():
                 s = encode(entry["name"], pixels(f.read_text()))
                 if s:
                     sprites.append(s)
-    math = [line.split("\t") for line in MATH.read_text().splitlines() if "\t" in line] if MATH.exists() else []
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("const SPRITES = %s;\nconst MATH = %s;\n" % (
-        json.dumps(sprites, separators=(",", ":")), json.dumps(math, ensure_ascii=False, separators=(",", ":"))))
-    print(f"{len(sprites)} sprites, {len(math)} lines -> {out} ({out.stat().st_size // 1024} KB)")
+    out.write_text("const SPRITES = %s;\n" % json.dumps(sprites, separators=(",", ":")))
+    print(f"{len(sprites)} sprites -> {out} ({out.stat().st_size // 1024} KB)")
 
 
 if __name__ == "__main__":

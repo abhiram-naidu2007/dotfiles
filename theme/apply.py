@@ -5,13 +5,12 @@ the hue of the dark tones (tints the neutral base) and the hue of the most
 colourful tones (accent, accent2). Lightness and chroma are fixed in OKLCH, so
 every wallpaper gives a calm, readable, evenly-weighted theme. Semantic and
 ANSI colours use fixed hues at the same pastel weight.
-Three moods share the same hues and differ only in lightness and chroma:
+Two moods share the same hues and differ only in lightness and chroma:
   night  near-black base, pastel accents (the default)
-  day    near-white base, deeper accents
   paper  warm cream and ink for reading; hues are fixed, the wallpaper is ignored
 Every template in templates/ is rendered to the path on its first line:
   # target: ~/.config/x
-Usage: apply.py [--mode night|day|paper] WALLPAPER
+Usage: apply.py [--mode night|paper] [--world meridian|sakuga|katha|toon] WALLPAPER
        apply.py --check ...   print the palette only
 """
 import json, math, os, subprocess, sys
@@ -85,23 +84,34 @@ def hue_dist(a, b): return min(abs(a - b), 360 - abs(a - b))
 # Per mood: lightness of the six base layers (crust, mantle, bg, surface,
 # surface1, surface2), their tint chroma, then (lightness, chroma, minimum
 # contrast) for each text and accent role. crust is always the layer furthest
-# from the text: darkest at night, brightest by day, so "crust on accent" reads
+# from the text: darkest at night, brightest on paper, so "crust on accent" reads
 # in every mood.
 MOODS = {
     "night": dict(layers=(0.145, 0.165, 0.190, 0.245, 0.310, 0.390), tint=0.018,
                   fg=(0.91, 0.012, 11), subtext=(0.80, 0.015, 7), dim=(0.62, 0.020, 4.5),
                   accent=(0.80, 0.115, 7), accent2=(0.78, 0.100, 6),
                   ansi=(0.78, 0.110, 6), bright=(0.85, 0.095, 8)),
-    "day":   dict(layers=(0.985, 0.970, 0.950, 0.912, 0.868, 0.800), tint=0.012,
-                  fg=(0.27, 0.022, 11), subtext=(0.41, 0.024, 7), dim=(0.56, 0.024, 4),
-                  accent=(0.56, 0.140, 4.6), accent2=(0.58, 0.130, 4.3),
-                  ansi=(0.58, 0.130, 4.3), bright=(0.50, 0.140, 5.5)),
-    "paper": dict(layers=(0.968, 0.950, 0.930, 0.892, 0.848, 0.780), tint=0.030,
-                  fg=(0.27, 0.020, 11), subtext=(0.40, 0.025, 7), dim=(0.55, 0.030, 4),
-                  accent=(0.44, 0.070, 6), accent2=(0.48, 0.095, 5),
-                  ansi=(0.50, 0.080, 4.5), bright=(0.42, 0.090, 6)),
+    "paper": dict(layers=(0.945, 0.930, 0.912, 0.875, 0.835, 0.770), tint=0.006,
+                  fg=(0.33, 0.006, 8), subtext=(0.44, 0.008, 5.5), dim=(0.58, 0.010, 3.2),
+                  accent=(0.40, 0.040, 6), accent2=(0.46, 0.050, 4.5),
+                  ansi=(0.48, 0.050, 4.5), bright=(0.40, 0.060, 6)),
 }
 PAPER_HUES = (85, 255, 35)   # cream paper, blue-black ink, sepia
+
+# Loka worlds: the hues come from the world's own colours (the same hex values as
+# ~/dotfiles/loka/shell/src/theme.rs; Meridian's base is tinted on purpose), not from the wallpaper. tint is the chroma of the
+# base layers, accent_c scales the chroma of the first accent (Meridian is monochrome).
+WORLDS = {
+    "meridian": dict(base="#1a1d24", accent="#eceff4", accent2="#d71921", tint=0.006, accent_c=0.15),
+    "sakuga":   dict(base="#0a0b10", accent="#e23a42", accent2="#5aa7e6", tint=0.016, accent_c=1.0, from_wall=True),
+    "katha":    dict(base="#0e1440", accent="#e8b04a", accent2="#f28fb0", tint=0.040, accent_c=1.05),
+    "toon":     dict(base="#2a2244", accent="#ffd45c", accent2="#8ee3c8", tint=0.034, accent_c=1.1),
+}
+
+
+def world_hues(name):
+    w = WORLDS[name]
+    return tuple(to_oklch(rgb(w[k]))[2] for k in ("base", "accent", "accent2"))
 
 
 def wallpaper_hues(wallpaper):
@@ -121,11 +131,21 @@ def wallpaper_hues(wallpaper):
     return base_h, acc_h, far[0][2] if far else (acc_h + 150) % 360
 
 
-def palette(wallpaper, mode="night"):
-    m = MOODS[mode]
-    base_h, acc_h, acc2_h = PAPER_HUES if mode == "paper" else wallpaper_hues(wallpaper)
+def palette(wallpaper, mode="night", world=None):
+    m = dict(MOODS[mode])
+    if mode == "paper":
+        base_h, acc_h, acc2_h = PAPER_HUES
+    elif world and not WORLDS[world].get("from_wall"):
+        base_h, acc_h, acc2_h = world_hues(world)
+    else:
+        base_h, acc_h, acc2_h = wallpaper_hues(wallpaper)
     dark = mode == "night"
     tint = m["tint"]
+    if world and dark:
+        w = WORLDS[world]
+        tint = w["tint"]
+        L, C, ratio = m["accent"]
+        m["accent"] = (L, C * w["accent_c"], ratio)
     names = ("crust", "mantle", "bg", "surface", "surface1", "surface2")
     # the raised layers carry a little more of the hue than the background
     p = {n: oklch(L, tint * (1 if i < 3 else 1.3), base_h) for i, (n, L) in enumerate(zip(names, m["layers"]))}
@@ -148,10 +168,10 @@ def palette(wallpaper, mode="night"):
         p[name] = readable(L, C, h, bg, ratio)
         p["br" + name] = role("bright", h)
     p["ok"], p["warn"], p["crit"] = p["green"], p["yellow"], p["red"]
-    # ANSI 0 / 8: the terminal's "black". By day they are the light greys, so
+    # ANSI 0 / 8: the terminal's "black". On paper they are the light greys, so
     # programs that paint bars with them still get dark text on a pale bar.
     # The tray pill of the bar. Tray icons belong to the programs that own them and those keep
-    # the pale icons they started with, so by day the pill behind them is ink, not paper.
+    # the pale icons they started with, so on paper the pill behind them is ink, not paper.
     p["tray"] = p["surface"] if dark else p["fg"]
     p["ansi0"] = p["surface1"]
     p["ansi8"] = p["surface2"] if dark else p["dim"]
@@ -166,6 +186,7 @@ def palette(wallpaper, mode="night"):
         out[k + "_rgb"] = ", ".join(str(int(v[i:i+2], 16)) for i in (1, 3, 5))          # for JSON colour arrays
     out.update(
         mode=mode,
+        world=world or "",
         variant="dark" if dark else "light",
         prefer_dark="1" if dark else "0",
         gtk_theme="Adwaita-dark" if dark else "Adwaita",
@@ -207,10 +228,16 @@ if __name__ == "__main__":
     if "--mode" in args:
         mode = args[args.index("--mode") + 1]
         del args[args.index("--mode"):args.index("--mode") + 2]
+    world = None
+    if "--world" in args:
+        world = args[args.index("--world") + 1]
+        del args[args.index("--world"):args.index("--world") + 2]
+        if world not in WORLDS:
+            sys.exit("apply.py: world is one of: " + " ".join(WORLDS))
     wp = [a for a in args if not a.startswith("--")]
     if not wp or mode not in MOODS:
         sys.exit(__doc__)
-    pal = palette(os.path.expanduser(wp[0]), mode)
+    pal = palette(os.path.expanduser(wp[0]), mode, world)
     print(json.dumps({k: v for k, v in pal.items() if not k.endswith(("_hex", "_rgb"))}, indent=1))
     if not check:
         cache = Path.home() / ".cache/theme"

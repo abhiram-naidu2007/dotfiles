@@ -2,7 +2,6 @@
 # rofi mode "web": every bookmark of every Thorium profile. Type to filter, Enter opens it in
 # the profile it belongs to. Anything that matches no bookmark is opened as an address
 # (if it looks like one) or searched for.
-SEARCH_URL="https://www.google.com/search?q="
 THORIUM="$HOME/.config/thorium"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/rice/bookmarks.rofi"
 
@@ -23,7 +22,7 @@ if [ "${ROFI_RETV:-0}" = 0 ]; then
             ' "$f"
         done > "$CACHE.tmp" && mv "$CACHE.tmp" "$CACHE"
     fi
-    printf '\0markup-rows\x1ftrue\n\0message\x1f<b>⏎</b> open bookmark     no match: an address opens, anything else is searched\n'
+    printf '\0markup-rows\x1ftrue\n\0message\x1f<b>⏎</b> open bookmark     no match: an address opens, anything else is searched     <b>yt gh w te aw pkg maps tr mal dex ai</b> + words\n'
     cat "$CACHE"
     exit 0
 fi
@@ -33,12 +32,4 @@ if [ "$ROFI_RETV" = 1 ] && [ -n "$ROFI_INFO" ]; then          # a bookmark
     setsid thorium-browser --profile-directory="$profile" "$url" >/dev/null 2>&1 &
     exit 0
 fi
-text=$1                                                        # typed text
-[ -n "$text" ] || exit 0
-case "$text" in
-    *" "*) url="$SEARCH_URL$(jq -rn --arg q "$text" '$q|@uri')" ;;
-    http://*|https://*) url=$text ;;
-    *.*) url="https://$text" ;;
-    *) url="$SEARCH_URL$(jq -rn --arg q "$text" '$q|@uri')" ;;
-esac
-setsid xdg-open "$url" >/dev/null 2>&1 &
+[ -n "$1" ] && exec "$HOME/.config/rofi/scripts/websearch.sh" "$1"
