@@ -1,22 +1,6 @@
 #!/bin/bash
 w="${1:-meridian}"
 case "$w" in meridian|katha|sakuga|toon) ;; *) echo "usage: loka-world meridian|katha|sakuga|toon" >&2; exit 1 ;; esac
-if qs ipc -p "$HOME/.config/panacea" show >/dev/null 2>&1; then exec qs ipc -p "$HOME/.config/panacea" call pill world "$w"; fi
-cfg="$HOME/.config/panacea/settings.json"
-python3 - "$cfg" "$w" <<'PY'
-import json, sys
-p, w = sys.argv[1], sys.argv[2]
-fonts = {
-    "meridian": ("JetBrainsMono Nerd Font", "Inter Tight", "Inter Display"),
-    "sakuga":   ("Inter Tight", "Inter Tight", "Inter Display"),
-    "katha":    ("Anek Telugu", "Anek Telugu", "Ramaraja"),
-    "toon":     ("Rounded Mplus 1c", "Rounded Mplus 1c", "Rounded Mplus 1c"),
-}[w]
-d = json.load(open(p))
-d["themeId"] = w
-d["fontFam"], d["fontBody"], d["fontDisplay"] = fonts
-json.dump(d, open(p, "w"), indent=2, ensure_ascii=False)
-PY
 mkdir -p "$HOME/.config/loka"
 printf '%s\n' "$w" > "$HOME/.config/loka/world"
 exec "$HOME/.local/bin/rice" world "$w"

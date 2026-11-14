@@ -25,7 +25,7 @@ APT_PKGS=(i3 polybar rofi dunst picom fish starship stow fonts-inter autotiling 
           python3-numpy python3-pil python3-cairo python3-venv
           fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji)
 # Not in apt: JetBrainsMono Nerd Font (~/.local/share/fonts), ghostty, thorium, limusic AppImage, cargo (rustup.rs, for evry and loka),
-# typst (~/.local/bin), catppuccin-mocha-peach-cursors (~/.icons), quickshell (~/.local/bin, only for the fallback shell)
+# typst (~/.local/bin), catppuccin-mocha-peach-cursors (~/.icons)
 DRY=0
 
 run() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }

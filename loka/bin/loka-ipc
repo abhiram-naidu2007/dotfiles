@@ -1,5 +1,2 @@
 #!/bin/bash
-if pgrep -x loka >/dev/null; then
-    exec "$HOME/.local/bin/loka" msg "$@"
-fi
-exec qs -p "$HOME/.config/panacea" ipc call pill "$@"
+exec "$HOME/.local/bin/loka" msg "$@"

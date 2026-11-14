@@ -3,9 +3,6 @@ fn=$1; shift
 if pgrep -x loka >/dev/null && "$HOME/.local/bin/loka" msg "$fn" "$@" 2>/dev/null; then
     exit 0
 fi
-if qs ipc -p "$HOME/.config/panacea" show >/dev/null 2>&1; then
-    exec qs ipc -p "$HOME/.config/panacea" call pill "$fn" "$@"
-fi
 case "$fn" in
     launcher) exec ~/.config/rofi/scripts/launcher.sh apps ;;
     powermenu) exec ~/.config/i3/scripts/powermenu.sh ;;

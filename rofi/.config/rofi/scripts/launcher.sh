@@ -26,7 +26,7 @@ fi
 (evry index --if-older 20 >/dev/null 2>&1 &)
 
 DROP=
-[ -e "$HOME/.config/loka/shell-on" ] && { pgrep -x quickshell >/dev/null || pgrep -x loka >/dev/null; } && DROP="window { location: north; anchor: north; y-offset: 46px; }"
+[ -e "$HOME/.config/loka/shell-on" ] && pgrep -x loka >/dev/null && DROP="window { location: north; anchor: north; y-offset: 46px; }"
 # XDG_CURRENT_DESKTOP=XFCE: also list the XFCE settings apps
 env ROFI_PLUGIN_PATH="$LIB" XDG_CURRENT_DESKTOP=XFCE rofi -sort -sorting-method fzf -matching $match \
   -modes "$modes" -show "$show" -combi-modes "$SEARCH,drun" -combi-hide-mode-prefix -display-combi "󰀻  Apps" -theme launcher ${filter:+-filter "$filter"} \

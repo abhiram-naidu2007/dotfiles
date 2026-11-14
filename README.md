@@ -1,6 +1,6 @@
 # dotfiles
 
-Ubuntu 26.04, X11. i3 + the loka shell (one Rust binary, `~/.local/bin/loka`: bar, island, control centre, notifications, tray; the Quickshell version in `loka/panacea` is the fallback) + rofi + picom + ghostty + fish/starship + zathura + Neovim. polybar and dunst come back when the shell is off (`rm ~/.config/loka/shell-on`).
+Ubuntu 26.04, X11. i3 + the loka shell (one Rust binary, `~/.local/bin/loka`: bar, island, control centre, notifications, tray) + rofi + picom + ghostty + fish/starship + zathura + Neovim. polybar and dunst come back when the shell is off (`rm ~/.config/loka/shell-on`).
 One palette for everything, in four worlds (Meridian, Katha, Sakuga, Toon): each world brings its own hues, except Sakuga, whose hues are read from the wallpaper (accent hues only; lightness and contrast are fixed in OKLCH). Two moods: **night** (the world's own theme) and **paper** (e-ink).
 
 ## Install on a fresh machine
@@ -36,7 +36,7 @@ Each step is idempotent. `link` moves any clashing file to `.backup/<date>/` fir
 ## Shell (`loka`)
 One Rust binary, `~/.local/bin/loka` (source `loka/shell/`, `cargo build --release` then `install -m755 target/release/loka ~/.local/bin/`), draws the bar, the island (clock, toasts, OSD), the control centre and its pages (Wi-Fi, Bluetooth, audio, battery, recording, calendar, notifications, clipboard, settings, power), owns `org.freedesktop.Notifications` and is the tray's StatusNotifier watcher. About 20 MB of RAM. Every page works from the keyboard: Tab / arrows move, Enter acts, Esc goes back.
 
-- Start / switch: `loka-shell` runs the Rust shell, or the Quickshell fallback when `~/.config/loka/shell-impl` is `quickshell`. `autostart.sh` starts it when `~/.config/loka/shell-on` exists; without that file polybar and dunst run instead.
+- Start: `loka-shell` runs the shell. `autostart.sh` starts it when `~/.config/loka/shell-on` exists; without that file polybar and dunst run instead.
 - Commands: `loka-key NAME` (or `loka msg NAME`): controls, wifi, bluetooth, audio, battery, record, calendar, notifications, clipboard, settings, powermenu, worlds, worldNext, worldWalls, dnd, close.
 - Worlds: `rice world NAME [FILE]` or `loka-world NAME`; the current world is in `~/.config/loka/world`.
 - Test without touching the desktop: `loka/dev/run.sh` opens a nested i3 in Xephyr on `:7`.
@@ -94,7 +94,7 @@ Own config, 31 plugins, about 25 ms to start. Keys, trainers and a learning ladd
 | Dir | What |
 |---|---|
 | `i3/` | window manager config and scripts (power menu, screenshot, key list, browser profile picker, display layouts, showcase, compositor start) |
-| `loka/` | the shell's dotfiles side: `bin/` (`loka-shell` starts Rust or Quickshell per `~/.config/loka/shell-impl`; `loka-key` / `loka-ipc` send commands to whichever runs; `loka-world`, `loka-art`, `loka-stats`, `loka-zapfast`), the Rust shell's source (`shell/`), the Quickshell fallback (`panacea/`, `qml/` Hyprland stub, X11 shims in `shim/`), nested test session `dev/` (`run.sh` builds its i3 config from the live one). |
+| `loka/` | the shell's dotfiles side: `bin/` (`loka-shell` starts the shell; `loka-key` / `loka-ipc` send it commands; `loka-world`, `loka-art`, `loka-stats`, `loka-zapfast`), the Rust shell's source (`shell/`), what the shell runs or loads (`panacea/`: Wi-Fi, recording and captive-portal scripts, sounds, one card image, kept from the Panacea port; `shim/`: clipboard history on xclip), nested test session `dev/` (`run.sh` builds its i3 config from the live one). |
 | `polybar/ rofi/ dunst/ picom/ ghostty/ fish/ gtk/ zathura/ fastfetch/` | bar and notifications when the shell is off, launcher, compositor, terminal, shell, cursor, PDF reader, system info |
 | `evry/` | file index + search (Rust) and the live rofi tabs (C). `make -C evry install` |
 | `mathwall/` | the live wallpaper (C, OpenGL) and `rice-curtain`, the dissolve between two looks. `make -C mathwall install` |

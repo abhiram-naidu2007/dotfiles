@@ -1,5 +1,6 @@
 #!/bin/bash
+c="$(dirname "$(readlink -f "$0")")/cliphist"
 t=$(xclip -selection clipboard -t TARGETS -o 2>/dev/null)
 img=$(printf '%s\n' "$t" | grep -m1 -E '^image/(png|jpeg|webp)$')
-if [ -n "$img" ]; then xclip -selection clipboard -t "$img" -o 2>/dev/null | cliphist store
-elif printf '%s\n' "$t" | grep -qE '^(UTF8_STRING|STRING|text/plain)'; then xclip -selection clipboard -o 2>/dev/null | cliphist store; fi
+if [ -n "$img" ]; then xclip -selection clipboard -t "$img" -o 2>/dev/null | "$c" store
+elif printf '%s\n' "$t" | grep -qE '^(UTF8_STRING|STRING|text/plain)'; then xclip -selection clipboard -o 2>/dev/null | "$c" store; fi

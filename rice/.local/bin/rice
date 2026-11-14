@@ -555,7 +555,7 @@ menu() {
   choice=$(printf '%s\0' "$(tile 󰏘 theme)" "$(tile 󰂺 paper)" "$(tile 󰸉 wallpaper)" "$(tile 󰊕 'math art')" "$(tile 󰝨 "live: $(live_now)")" \
     | rofi -dmenu -sep '\0' -eh 4 -markup-rows -i -format i -theme tiles -theme-str 'window {width: 900px;} listview {columns: 6;}' -mesg "mood: <b>$cur</b>     wallpaper: <b>$(scene_now)</b>")
   case $choice in
-    0) mode night ;; 1) mode paper ;; 2) if pgrep -x loka >/dev/null || pgrep -x quickshell >/dev/null; then "$HOME/.local/bin/loka-key" worldWalls; else pick; fi ;; 3) art ;; 4) live toggle ;;
+    0) mode night ;; 1) mode paper ;; 2) if pgrep -x loka >/dev/null; then "$HOME/.local/bin/loka-key" worldWalls; else pick; fi ;; 3) art ;; 4) live toggle ;;
   esac
 }
 

@@ -1,13 +1,4 @@
 #!/bin/bash
-impl=$(cat "$HOME/.config/loka/shell-impl" 2>/dev/null)
 unset I3SOCK
 sock=$(i3 --get-socketpath 2>/dev/null) && export I3SOCK="$sock"
-if [ "$impl" = rust ] && [ -x "$HOME/.local/bin/loka" ]; then
-    exec "$HOME/.local/bin/loka" "$@"
-fi
-export PATH="$HOME/dotfiles/loka/shim:$PATH"
-export QML_IMPORT_PATH="$HOME/dotfiles/loka/qml"
-export HYPRLAND_INSTANCE_SIGNATURE=i3
-export QT_QUICK_BACKEND=software
-export QS_X11_BYPASS_WM=1
-exec "$HOME/.local/bin/quickshell" -p "$HOME/.config/panacea" "$@"
+exec "$HOME/.local/bin/loka" "$@"
