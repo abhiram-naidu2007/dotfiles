@@ -1,0 +1,31 @@
+#!/bin/bash
+D="${XDG_DATA_HOME:-$HOME/.local/share}/loka/clip"
+MAX=200
+mkdir -p "$D"
+next_id() { local n; n=$(ls "$D" 2>/dev/null | sed -n 's/^\([0-9]*\)\..*/\1/p' | sort -n | tail -1); echo $(( ${n:-0} + 1 )); }
+id_of() { local l; IFS= read -r l; printf '%s' "${l%%$'\t'*}"; }
+case "$1" in
+  store)
+    tmp=$(mktemp "$D/.in.XXXX"); cat > "$tmp"
+    [ -s "$tmp" ] || { rm -f "$tmp"; exit 0; }
+    mime=$(file -b --mime-type "$tmp")
+    case "$mime" in image/*) ext=${mime#image/} ;; *) ext=txt ;; esac
+    h=$(sha1sum < "$tmp" | cut -c1-40)
+    for f in "$D"/*.$ext; do [ -e "$f" ] || continue; [ "$(sha1sum < "$f" | cut -c1-40)" = "$h" ] && { rm -f "$f"; break; }; done
+    mv "$tmp" "$D/$(next_id).$ext"
+    ls "$D" | sed -n 's/^\([0-9]*\)\..*/\1/p' | sort -n | head -n -$MAX | while read -r o; do rm -f "$D/$o".*; done ;;
+  list)
+    ls "$D" | sed -n 's/^\([0-9]*\)\.\(.*\)/\1 \2/p' | sort -rn | while read -r id ext; do
+      f="$D/$id.$ext"
+      if [ "$ext" = txt ]; then
+        printf '%s\t%s\n' "$id" "$(head -c 300 "$f" | tr '\n\t' '  ')"
+      else
+        sz=$(( $(stat -c %s "$f") / 1024 )); dim=$(identify -format '%wx%h' "$f" 2>/dev/null)
+        printf '%s\t[[ binary data %s KiB %s %s ]] %s\n' "$id" "$sz" "$ext" "$dim" "$f"
+      fi
+    done ;;
+  decode) id=$(id_of); cat "$D/$id".* 2>/dev/null ;;
+  delete) id=$(id_of); rm -f "$D/$id".* ;;
+  wipe) rm -f "$D"/* ;;
+  *) echo "usage: cliphist store|list|decode|delete|wipe" >&2; exit 1 ;;
+esac

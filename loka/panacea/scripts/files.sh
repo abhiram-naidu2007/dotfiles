@@ -1,0 +1,549 @@
+#!/bin/bash
+
+py() { python3 "$@"; }
+
+PROGRESS_PID=""
+WORK_PID=""
+CUR_TARGET=""
+
+progress_start() {
+    local total=$1; shift
+    [ "$total" -gt 0 ] 2>/dev/null || return 0
+    local targets=("$@")
+    (
+        while :; do
+            local cur
+            cur=$(du -sbc "${targets[@]}" 2>/dev/null | tail -1 | cut -f1)
+            if [ -n "$cur" ]; then
+                [ "$cur" -gt "$total" ] && cur=$total
+                local pct=$(( cur * 100 / total ))
+                [ "$pct" -gt 99 ] && pct=99
+                printf 'PROGRESS %d %d %d\n' "$pct" "$cur" "$total"
+            fi
+            sleep 0.25
+        done
+    ) &
+    PROGRESS_PID=$!
+}
+
+progress_kill() {
+    [ -n "$PROGRESS_PID" ] && kill "$PROGRESS_PID" 2>/dev/null
+    PROGRESS_PID=""
+}
+
+on_cancel() {
+    progress_kill
+    [ -n "$WORK_PID" ] && kill "$WORK_PID" 2>/dev/null && wait "$WORK_PID" 2>/dev/null
+    [ -n "$CUR_TARGET" ] && [ "$OP" = "copy" -o "$CROSS" = 1 ] && rm -rf -- "$CUR_TARGET"
+    printf 'CANCELLED\n'
+    exit 130
+}
+
+dirty_kb() {
+    awk '/^(Dirty|Writeback):/ {s += $2} END {print s+0}' /proc/meminfo
+}
+flush_to_disk() {
+    printf 'PHASE sync\n'
+    local start; start=$(dirty_kb)
+    sync -f "$1" 2>/dev/null &
+    local sp=$!
+    WORK_PID=$sp
+    while kill -0 "$sp" 2>/dev/null; do
+        local now; now=$(dirty_kb)
+        if [ "$start" -gt 0 ]; then
+            local left=$now; [ "$left" -gt "$start" ] && left=$start
+            printf 'SYNC %d %d\n' $(( (start - left) * 100 / start )) $(( left * 1024 ))
+        fi
+        sleep 0.3
+    done
+    wait "$sp" 2>/dev/null
+    WORK_PID=""
+}
+
+uniq_target() {
+    local dst=$1 name=$2
+    local target="$dst/$name"
+    [ -e "$target" ] || { printf '%s' "$target"; return; }
+    local base="${name%.*}" ext="${name##*.}" n=2
+    while [ -e "$target" ]; do
+        if [ "$base" = "$name" ]; then target="$dst/$name-$n"
+        else                           target="$dst/$base-$n.$ext"; fi
+        n=$((n + 1))
+    done
+    printf '%s' "$target"
+}
+
+case "$1" in
+    list)
+        DIR="${2:-$HOME}"
+        DIR="${DIR/#\~/$HOME}"
+        py - "$DIR" "${3:-}" <<'EOF'
+import os, sys, mimetypes
+
+d = sys.argv[1]
+show_hidden = len(sys.argv) > 2 and sys.argv[2] == 'hidden'
+try:
+    entries = list(os.scandir(d))
+except OSError:
+    sys.exit(0)
+
+dirs, files = [], []
+for e in entries:
+    if e.name.startswith('.') and not show_hidden:
+        continue
+    try:
+        st = e.stat()
+    except OSError:
+        continue
+    if e.is_dir():
+        dirs.append((e.name, 0, int(st.st_mtime), 'inode/directory'))
+    else:
+        mime = mimetypes.guess_type(e.name)[0] or 'application/octet-stream'
+        files.append((e.name, st.st_size, int(st.st_mtime), mime))
+
+key = lambda t: t[0].lower()
+for name, size, mtime, mime in sorted(dirs, key=key):
+    print(f"d|{name}|{size}|{mtime}|{mime}")
+for name, size, mtime, mime in sorted(files, key=key):
+    print(f"f|{name}|{size}|{mtime}|{mime}")
+EOF
+        ;;
+
+    apps)
+        P="${2:?}"
+        P="${P/#\~/$HOME}"
+        MIME=$(xdg-mime query filetype "$P" 2>/dev/null)
+        DEFAULT=$(xdg-mime query default "$MIME" 2>/dev/null)
+        py - "$MIME" "$DEFAULT" <<'EOF'
+import configparser, os, sys
+
+mime, default = sys.argv[1], sys.argv[2]
+dirs = [os.path.expanduser("~/.local/share/applications"),
+        "/usr/local/share/applications", "/usr/share/applications"]
+
+group = mime.split("/")[0] + "/" if "/" in mime else ""
+
+exact, similar, rest = {}, {}, {}
+for d in dirs:
+    if not os.path.isdir(d):
+        continue
+    for fn in os.listdir(d):
+        if not fn.endswith(".desktop"):
+            continue
+        if fn in exact or fn in similar or fn in rest:
+            continue
+        cp = configparser.RawConfigParser(strict=False)
+        try:
+            cp.read(os.path.join(d, fn), encoding="utf-8")
+            e = cp["Desktop Entry"]
+        except Exception:
+            continue
+        if e.get("NoDisplay", "false").lower() == "true":
+            continue
+        if e.get("Type", "Application") != "Application":
+            continue
+
+        item = (e.get("Name", fn), e.get("Icon", ""))
+        mimes = [m for m in e.get("MimeType", "").split(";") if m]
+        if mime and mime in mimes:
+            exact[fn] = item
+        elif group and any(m.startswith(group) for m in mimes):
+            similar[fn] = item
+        else:
+            rest[fn] = item
+
+def emit(fn, table):
+    name, icon = table[fn]
+    print(f"{fn}|{name}|{icon}")
+
+for table in (exact, similar, rest):
+    if default in table:
+        emit(default, table)
+        break
+
+for table in (exact, similar, rest):
+    for fn in sorted(table, key=lambda f: table[f][0].lower()):
+        if fn != default:
+            emit(fn, table)
+EOF
+        ;;
+
+    open)
+        P="${2:?}"
+        P="${P/#\~/$HOME}"
+        DESKTOP="$3"
+        if [ -n "$DESKTOP" ]; then
+            for d in "$HOME/.local/share/applications" /usr/local/share/applications \
+                     /usr/share/applications; do
+                if [ -f "$d/$DESKTOP" ]; then
+                    setsid gio launch "$d/$DESKTOP" "$P" >/dev/null 2>&1 &
+                    exit 0
+                fi
+            done
+        fi
+        setsid xdg-open "$P" >/dev/null 2>&1 &
+        ;;
+
+    mkdir)
+        D="${2:?}"; N="${3:?}"
+        D="${D/#\~/$HOME}"
+        mkdir -p "$D/$N"
+        ;;
+
+    rename)
+        P="${2:?}"; N="${3:?}"
+        P="${P/#\~/$HOME}"
+        mv -n "$P" "$(dirname "$P")/$N"
+        ;;
+
+    trash)
+        shift
+        for P; do
+            P="${P/#\~/$HOME}"
+            gio trash "$P" 2>/dev/null || rm -rf -- "$P"
+        done
+        ;;
+
+    extract)
+        SRC="${2:?}"
+        DST="${3:-}"
+        SRC="${SRC/#\~/$HOME}"
+        [ -f "$SRC" ] || exit 1
+
+        if [ -z "$DST" ]; then
+            DST="$(dirname "$SRC")"
+        fi
+        DST="${DST/#\~/$HOME}"
+        mkdir -p "$DST" || exit 1
+
+        if command -v bsdtar >/dev/null 2>&1; then
+            bsdtar -xf "$SRC" -C "$DST"
+        elif [[ "$SRC" =~ \.zip$ ]] && command -v unzip >/dev/null 2>&1; then
+            unzip -q -o "$SRC" -d "$DST"
+        elif [[ "$SRC" =~ \.7z$ ]] && command -v 7z >/dev/null 2>&1; then
+            7z x -y -o"$DST" "$SRC"
+        elif [[ "$SRC" =~ \.rar$ ]] && command -v unrar >/dev/null 2>&1; then
+            unrar x -y "$SRC" "$DST/"
+        else
+            tar -xf "$SRC" -C "$DST"
+        fi
+        ;;
+
+    conflicts)
+        DST="${2:?}"; shift 2
+        DST="${DST/#\~/$HOME}"
+        for src; do
+            src="${src/#\~/$HOME}"
+            name="$(basename "$src")"
+            [ "$src" = "$DST/$name" ] && continue
+            [ -e "$DST/$name" ] && printf '%s\n' "$name"
+        done
+        ;;
+
+    copy|move)
+        OP="$1"
+        DST="${2:?}"
+        MODE="${3:-keepboth}"
+        shift 3
+        DST="${DST/#\~/$HOME}"
+        [ "$#" -gt 0 ] || exit 0
+        [ -d "$DST" ] || { printf 'ERROR no-dir\n'; exit 1; }
+        [ -w "$DST" ] || { printf 'ERROR no-write\n'; exit 1; }
+
+        dst_dev=$(stat -c %d "$DST" 2>/dev/null)
+        srcs=(); targets=()
+        for src; do
+            src="${src/#\~/$HOME}"
+            src="${src%/}"
+            [ -e "$src" ] || continue
+            name="$(basename "$src")"
+            case "$DST/" in "$src/"*) printf 'ERROR into-self\n'; continue ;; esac
+            case "$MODE" in
+                overwrite) target="$DST/$name" ;;
+                skip)
+                    [ -e "$DST/$name" ] && [ "$src" != "$DST/$name" ] && continue
+                    target="$DST/$name"
+                    ;;
+                *) target="$(uniq_target "$DST" "$name")" ;;
+            esac
+            [ "$src" = "$target" ] && continue
+            srcs+=("$src")
+            targets+=("$target")
+        done
+        [ "${#srcs[@]}" -gt 0 ] || { printf 'PROGRESS 100 0 0\n'; exit 0; }
+
+        trap on_cancel INT TERM
+        trap progress_kill EXIT
+
+        CROSS=0
+        for s1 in "${srcs[@]}"; do
+            [ "$(stat -c %d "$s1" 2>/dev/null)" = "$dst_dev" ] || CROSS=1
+        done
+        need_bytes=0
+        if [ "$OP" = "copy" ] || [ "$CROSS" = 1 ]; then
+            total=$(du -sbc "${srcs[@]}" 2>/dev/null | tail -1 | cut -f1)
+            avail=$(df -B1 --output=avail "$DST" 2>/dev/null | tail -1 | tr -d ' ')
+            if [ -n "$avail" ] && [ "${total:-0}" -gt "$avail" ]; then
+                printf 'ERROR no-space %s %s\n' "$total" "$avail"
+                exit 1
+            fi
+            fstype=$(stat -f -c %T "$DST" 2>/dev/null)
+            if [ "$fstype" = "msdos" ] || [ "$fstype" = "vfat" ]; then
+                big=$(find "${srcs[@]}" -type f -size +4194303k -print -quit 2>/dev/null)
+                [ -n "$big" ] && { printf 'ERROR fat-4g %s\n' "$(basename "$big")"; exit 1; }
+            fi
+            need_bytes=${total:-0}
+            printf 'PROGRESS 0 0 %d\n' "$need_bytes"
+            progress_start "$need_bytes" "${targets[@]}"
+        fi
+
+        failed=0
+        for i in "${!srcs[@]}"; do
+            printf 'FILE %s\n' "$(basename "${srcs[$i]}")"
+            if [ "$MODE" = "overwrite" ] && [ -e "${targets[$i]}" ]; then
+                rm -rf -- "${targets[$i]}"
+            fi
+            CUR_TARGET="${targets[$i]}"
+            if [ "$OP" = "copy" ]; then
+                cp -r --no-clobber --preserve=mode,timestamps -- "${srcs[$i]}" "${targets[$i]}" 2>"/tmp/panacea-fileop.$$" &
+            else
+                mv -n -- "${srcs[$i]}" "${targets[$i]}" 2>"/tmp/panacea-fileop.$$" &
+            fi
+            WORK_PID=$!
+            if ! wait "$WORK_PID"; then
+                failed=1
+                printf 'ERROR fail %s\n' "$(head -1 "/tmp/panacea-fileop.$$" | tr '\n' ' ')"
+            fi
+            WORK_PID=""
+            CUR_TARGET=""
+        done
+        rm -f "/tmp/panacea-fileop.$$"
+        progress_kill
+
+        if [ "$need_bytes" -gt 0 ]; then
+            flush_to_disk "$DST"
+        fi
+        printf 'PROGRESS 100 %d %d\n' "$need_bytes" "$need_bytes"
+        exit $failed
+        ;;
+
+    copypath)
+        P="${2:?}"
+        P="${P/#\~/$HOME}"
+        printf '%s' "$P" | wl-copy
+        ;;
+
+    places)
+        printf 'home|%s|Home\n' "$HOME"
+        for k in Downloads Documents Pictures Videos Music Desktop; do
+            [ -d "$HOME/$k" ] && printf '%s|%s/%s|%s\n' "${k,,}" "$HOME" "$k" "$k"
+        done
+        printf 'root|/|System\n'
+        printf 'trash|%s/Trash/files|Trash\n' "${XDG_DATA_HOME:-$HOME/.local/share}"
+        ;;
+
+disks)
+    python3 -c '
+import subprocess, json, sys, os, re
+
+seen = set()
+results = []
+
+try:
+    df_p = subprocess.run(["df", "-B1", "--output=source,target,size,used", "-x", "tmpfs", "-x", "devtmpfs", "-x", "squashfs", "-x", "overlay", "-x", "efivarfs", "-x", "ramfs"], capture_output=True, text=True)
+    for line in df_p.stdout.strip().split("\n")[1:]:
+        parts = line.split()
+        if len(parts) < 4: continue
+        src, target, size, used = parts[0], parts[1], parts[2], parts[3]
+        if not src.startswith("/dev/"): continue
+        if any(target.startswith(p) for p in ["/boot", "/efi", "/var/lib/docker", "/snap"]): continue
+        if src in seen: continue
+        seen.add(src)
+        
+        lbl = subprocess.run(["lsblk", "-d", "-no", "LABEL", src], capture_output=True, text=True).stdout.strip()
+        if not lbl:
+            lbl = "System" if target == "/" else os.path.basename(target)
+            
+        info = subprocess.run(["lsblk", "-d", "-no", "RM,HOTPLUG,TRAN,SUBSYSTEMS", src], capture_output=True, text=True).stdout.lower()
+        pk = subprocess.run(["lsblk", "-no", "PKNAME", src], capture_output=True, text=True).stdout.strip()
+        p_info = subprocess.run(["lsblk", "-d", "-no", "RM,HOTPLUG,TRAN,SUBSYSTEMS", f"/dev/{pk}"], capture_output=True, text=True).stdout.lower() if pk else ""
+        
+        is_rem = target.startswith("/run/media/") or target.startswith("/media/") or "usb" in info or "usb" in p_info or "mmc" in info or "1" in info.split()[:2]
+        kind = "removable" if is_rem else "disk"
+        results.append(f"{kind}|{target}|{lbl}|{size}|{used}|{src}")
+except Exception:
+    pass
+
+try:
+    res = subprocess.run(["lsblk", "-J", "-b", "-o", "PATH,KNAME,TYPE,RM,HOTPLUG,TRAN,SUBSYSTEMS,SIZE,FSTYPE,LABEL,MOUNTPOINT,PKNAME,MODEL"], capture_output=True, text=True)
+    devs = json.loads(res.stdout).get("blockdevices", [])
+    
+    def flatten(nodes):
+        out = []
+        for n in nodes:
+            out.append(n)
+            if "children" in n:
+                out.extend(flatten(n["children"]))
+        return out
+
+    all_devs = flatten(devs)
+    dev_map = {d.get("kname") or d.get("path", "").replace("/dev/", ""): d for d in all_devs}
+
+    for d in all_devs:
+        p = d.get("path", "")
+        if not p.startswith("/dev/") or p.startswith(("/dev/zram", "/dev/loop", "/dev/sr")): continue
+        fstype = d.get("fstype")
+        if not fstype or fstype == "swap": continue
+        mp = d.get("mountpoint")
+        if mp or p in seen: continue
+        
+        tran = (d.get("tran") or "").lower()
+        subs = (d.get("subsystems") or "").lower()
+        rm = d.get("rm")
+        hp = d.get("hotplug")
+        
+        pk = d.get("pkname")
+        p_dev = dev_map.get(pk, {})
+        p_tran = (p_dev.get("tran") or "").lower()
+        p_subs = (p_dev.get("subsystems") or "").lower()
+        p_rm = p_dev.get("rm")
+        
+        is_rem = (tran == "usb" or p_tran == "usb" or "usb" in subs or "usb" in p_subs or rm or hp or p_rm)
+        if is_rem:
+            seen.add(p)
+            lbl = d.get("label") or d.get("model") or p_dev.get("model") or os.path.basename(p)
+            size = d.get("size") or 0
+            results.append(f"removable||{lbl}|{size}|0|{p}")
+except Exception:
+    pass
+
+try:
+    if os.path.isfile("/proc/mounts"):
+        with open("/proc/mounts", "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 3: continue
+                fs_src, fs_target, fs_type = parts[0], parts[1], parts[2]
+                if fs_type in ["fuse.mtpfs", "mtpfs", "jmtpfs", "simple-mtpfs"]:
+                    if os.path.isdir(fs_target):
+                        results.append(f"removable|{fs_target}|{os.path.basename(fs_target)}|0|0|mtp")
+                elif fs_type == "fuse.gvfsd-fuse":
+                    if os.path.isdir(fs_target):
+                        for dev_name in os.listdir(fs_target):
+                            dev_path = os.path.join(fs_target, dev_name)
+                            if os.path.isdir(dev_path):
+                                pretty = re.sub(r"^[a-zA-Z0-9+.-]*:host=", "", dev_name)
+                                pretty = re.sub(r"%2C.*$", "", pretty).replace("%20", " ").replace("_", " ")
+                                if not pretty: pretty = dev_name
+                                results.append(f"removable|{dev_path}|{pretty}|0|0|gvfs")
+except Exception:
+    pass
+
+for r in results:
+    print(r)
+'
+    ;;
+
+mountdisk)
+    dev="$2"
+    [ -n "$dev" ] || exit 1
+    mp=$(findmnt -n -o TARGET "$dev" 2>/dev/null | head -1)
+    if [ -n "$mp" ] && [ -d "$mp" ]; then
+        printf '%s\n' "$mp"
+        exit 0
+    fi
+    out=$(udisksctl mount -b "$dev" 2>&1)
+    if [ $? -eq 0 ]; then
+        mp=$(printf '%s' "$out" | sed -n 's/^Mounted .* at \(.*\)\./\1/p' | sed 's/\.$//')
+        if [ -n "$mp" ] && [ -d "$mp" ]; then
+            printf '%s\n' "$mp"
+            exit 0
+        fi
+    fi
+    gio mount -d "$dev" 2>/dev/null
+    mp=$(findmnt -n -o TARGET "$dev" 2>/dev/null | head -1)
+    if [ -n "$mp" ] && [ -d "$mp" ]; then
+        printf '%s\n' "$mp"
+        exit 0
+    fi
+    ;;
+
+unmountdisk)
+    target="$2"
+    [ -n "$target" ] || exit 1
+    if [ -b "$target" ]; then
+        udisksctl unmount -b "$target" 2>/dev/null || gio mount -u "$target" 2>/dev/null
+    else
+        udisksctl unmount -p "$target" 2>/dev/null || udisksctl unmount -b "$(findmnt -n -o SOURCE "$target" 2>/dev/null)" 2>/dev/null || gio mount -u "$target" 2>/dev/null
+    fi
+    ;;
+
+ejectdisk)
+    target="$2"
+    [ -n "$target" ] || exit 1
+    if [ -b "$target" ]; then dev="$target"
+    else dev=$(findmnt -n -o SOURCE --target "$target" 2>/dev/null | head -1); fi
+    if [ -n "$dev" ] && [ -b "$dev" ]; then
+        sync
+        parent=$(lsblk -no PKNAME "$dev" 2>/dev/null | head -1)
+        whole="/dev/${parent:-$(basename "$dev")}"
+        for part in $(lsblk -lnpo NAME,MOUNTPOINT "$whole" 2>/dev/null | awk 'NF>1 {print $1}'); do
+            if ! err=$(udisksctl unmount -b "$part" 2>&1); then
+                if ! umount "$part" 2>/dev/null; then
+                    busy=$(fuser -m "$part" 2>/dev/null | wc -w)
+                    printf 'ERROR busy %s\n' "${busy:-0}"
+                    exit 1
+                fi
+            fi
+        done
+        udisksctl power-off -b "$whole" >/dev/null 2>&1
+        printf 'OK\n'
+    else
+        gio mount -e "$target" 2>/dev/null || gio mount -u "$target" 2>/dev/null \
+            || { printf 'ERROR fail\n'; exit 1; }
+        printf 'OK\n'
+    fi
+    ;;
+
+automount)
+    python3 - <<'PY'
+import json, subprocess
+out = subprocess.run(["lsblk", "-J", "-o", "PATH,TYPE,FSTYPE,MOUNTPOINT,RM,HOTPLUG,TRAN"],
+                     capture_output=True, text=True).stdout
+skip = {"", "swap", "crypto_LUKS", "LVM2_member", "linux_raid_member", None}
+def walk(nodes, parent=None):
+    for n in nodes:
+        rem = lambda d: bool(d) and (d.get("rm") or d.get("hotplug")
+                                     or (d.get("tran") or "") in ("usb", "mmc"))
+        if (n.get("type") in ("part", "disk") and n.get("fstype") not in skip
+                and not n.get("mountpoint") and (rem(n) or rem(parent))):
+            subprocess.run(["udisksctl", "mount", "-b", n["path"], "--no-user-interaction"],
+                           capture_output=True)
+        walk(n.get("children", []), n if parent is None else parent)
+walk(json.loads(out or "{}").get("blockdevices", []))
+PY
+    ;;
+
+    emptytrash)
+        base="${XDG_DATA_HOME:-$HOME/.local/share}/Trash"
+        case "$base" in
+            */Trash) ;;
+            *) exit 1 ;;
+        esac
+        for d in files info expunged; do
+            [ -d "$base/$d" ] || continue
+            find "$base/$d" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        done
+        ;;
+
+    trashcount)
+        d="${XDG_DATA_HOME:-$HOME/.local/share}/Trash/files"
+        [ -d "$d" ] || { echo 0; exit 0; }
+        find "$d" -mindepth 1 -maxdepth 1 | wc -l
+        ;;
+
+    *)
+        echo "usage: files.sh list DIR | disks | apps P | open P [D] | mkdir D N | rename P N | trash P | copy S D | move S D | copypath P | places | emptytrash | trashcount" >&2
+        exit 1
+        ;;
+esac

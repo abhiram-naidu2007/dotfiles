@@ -1,0 +1,42 @@
+#!/bin/bash
+set -u
+src=${1:-}
+size=${2:-64}
+radius=${3:-8}
+[ -n "$src" ] || exit 1
+dir="${XDG_CACHE_HOME:-$HOME/.cache}/loka/art"
+mkdir -p "$dir"
+key=$(printf '%s|%s|%s' "$src" "$size" "$radius" | sha1sum | cut -c1-20)
+out="$dir/$key.png"
+if [ -s "$out" ]; then printf '%s\n' "$out"; exit 0; fi
+
+tmp=$(mktemp "$dir/.in.XXXXXX")
+trap 'rm -f "$tmp" "$tmp.trim.png"' EXIT
+case "$src" in
+    http://*|https://*) curl -fsSL --max-time 8 -o "$tmp" "$src" || exit 1 ;;
+    file://*) path=${src#file://}; path=$(printf '%b' "${path//%/\\x}"); cp -- "$path" "$tmp" || exit 1 ;;
+    /*) cp -- "$src" "$tmp" || exit 1 ;;
+    *) exit 1 ;;
+esac
+
+in="$tmp"
+read -r w h < <(magick identify -format '%w %h\n' "$tmp[0]" 2>/dev/null) || exit 1
+if magick "$tmp[0]" -bordercolor black -border 1 -fuzz 8% -trim +repage "$tmp.trim.png" 2>/dev/null; then
+    read -r tw th < <(magick identify -format '%w %h\n' "$tmp.trim.png")
+    if [ $((tw * th * 2)) -ge $((w * h)) ] && { [ "$tw" -lt "$w" ] || [ "$th" -lt "$h" ]; }; then
+        in="$tmp.trim.png"
+    fi
+fi
+
+if [ "$(magick identify -format '%[opaque]' "$tmp[0]" 2>/dev/null)" = False ]; then
+    in="$tmp"; fit="${size}x${size}"
+else
+    fit="${size}x${size}^"
+fi
+magick "$in[0]" -background none -colorspace RGB -filter Lanczos -resize "$fit" -colorspace sRGB \
+    -gravity center -extent "${size}x${size}" \
+    \( -size "${size}x${size}" xc:none -fill white -draw "roundrectangle 0,0,$((size - 1)),$((size - 1)),$radius,$radius" \) \
+    -alpha set -compose DstIn -composite "$out.tmp.png" || exit 1
+mv -f "$out.tmp.png" "$out"
+ls -t "$dir"/*.png 2>/dev/null | tail -n +200 | xargs -r rm -f
+printf '%s\n' "$out"

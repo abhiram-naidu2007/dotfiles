@@ -1,0 +1,38 @@
+#!/bin/bash
+where() {
+    i3-msg -t get_tree | python3 -I -c '
+import json, sys
+t = json.load(sys.stdin)
+used = set()
+def walk(n, ws):
+    if n.get("type") == "workspace":
+        ws = n
+        if n.get("num", -1) > 0: used.add(n["num"])
+    p = n.get("window_properties") or {}
+    if p.get("class") == "zapfast" and ws is not None:
+        wins = []
+        def count(m):
+            if m.get("window"): wins.append(m)
+            for c in m.get("nodes", []) + m.get("floating_nodes", []): count(c)
+        count(ws)
+        print("found", ws.get("num", -1), len(wins))
+        raise SystemExit
+    for c in n.get("nodes", []) + n.get("floating_nodes", []): walk(c, ws)
+walk(t, None)
+free = next(i for i in range(1, 100) if i not in used)
+print("none", free, 0)
+'
+}
+place() {
+    read -r state num count < <(where)
+    [ "$state" = found ] || return 1
+    if [ "$count" -le 1 ]; then
+        i3-msg -q '[class="^zapfast$"] focus'
+    else
+        free=$(i3-msg -t get_workspaces | python3 -I -c 'import json,sys;u={w["num"] for w in json.load(sys.stdin)};print(next(i for i in range(1,100) if i not in u))')
+        i3-msg -q "[class=\"^zapfast\$\"] move container to workspace number $free; workspace number $free"
+    fi
+}
+place && exit 0
+setsid -f zapfast "$@" >/dev/null 2>&1
+for _ in $(seq 1 40); do sleep 0.1; place && exit 0; done

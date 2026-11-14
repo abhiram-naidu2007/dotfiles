@@ -1,0 +1,29 @@
+[package]
+name = "loka-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
+fontdb = { version = "0.23.0", features = ["memmap", "fs"] }
+png = "0.18.1"
+pulseaudio = "0.3"
+resvg = { version = "0.50.0", default-features = false }
+rustix = { version = "1.1.6", features = ["event", "time", "fs", "mm"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tiny-skia = "0.12.0"
+x11rb = { version = "0.14.0", features = ["shm", "shape", "randr", "xfixes", "allow-unsafe-code"] }
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+
+[[bin]]
+name = "loka"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

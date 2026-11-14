@@ -1,0 +1,5 @@
+#!/bin/bash
+tmp=$(mktemp); cat > "$tmp"
+mime=$(file -b --mime-type "$tmp")
+case "$mime" in image/*) t=$mime ;; *) t=UTF8_STRING ;; esac
+( xclip -selection clipboard -t "$t" -i "$tmp"; rm -f "$tmp" ) &

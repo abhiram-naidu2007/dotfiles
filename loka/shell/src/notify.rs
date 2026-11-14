@@ -1,0 +1,143 @@
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+
+use zbus::blocking::Connection;
+use zbus::object_server::SignalEmitter;
+use zbus::zvariant::OwnedValue;
+
+use crate::model::Notif;
+use crate::services::{Msg, Waker};
+
+static NEXT: AtomicU32 = AtomicU32::new(1);
+static CONN: OnceLock<Mutex<Option<Connection>>> = OnceLock::new();
+
+struct Server {
+    w: Waker,
+}
+
+#[zbus::interface(name = "org.freedesktop.Notifications")]
+impl Server {
+    async fn get_capabilities(&self) -> Vec<String> {
+        vec!["body".into(), "actions".into(), "persistence".into()]
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn notify(
+        &self,
+        app_name: String,
+        replaces_id: u32,
+        app_icon: String,
+        summary: String,
+        body: String,
+        actions: Vec<String>,
+        hints: HashMap<String, OwnedValue>,
+        expire_timeout: i32,
+    ) -> u32 {
+        let id = if replaces_id > 0 { replaces_id } else { NEXT.fetch_add(1, Ordering::Relaxed) };
+        if summary.contains("Some required themes are missing") {
+            return id;
+        }
+        let urgency = hints.get("urgency").and_then(|v| u8::try_from(v).ok()).unwrap_or(1);
+        if app_name == "osd" {
+            let value = hints.get("value").and_then(|v| i32::try_from(v).ok()).unwrap_or(-1);
+            self.w.send(Msg::Ipc(format!("osd {value} {summary}")));
+            return id;
+        }
+        let n = Notif {
+            id,
+            app: if app_name.is_empty() { "Notification".into() } else { app_name },
+            summary,
+            body: strip_markup(&body),
+            icon: app_icon,
+            critical: urgency >= 2,
+            time: chrono::Local::now().format("%H:%M").to_string(),
+            actions: actions.chunks(2).filter(|c| c.len() == 2).map(|c| (c[0].clone(), c[1].clone())).collect(),
+        };
+        self.w.send(Msg::Notify(n, expire_timeout));
+        id
+    }
+
+    async fn close_notification(&self, id: u32, #[zbus(signal_emitter)] em: SignalEmitter<'_>) {
+        self.w.send(Msg::NotifClose(id));
+        let _ = Self::notification_closed(&em, id, 3).await;
+    }
+
+    async fn get_server_information(&self) -> (String, String, String, String) {
+        ("loka".into(), "loka".into(), env!("CARGO_PKG_VERSION").into(), "1.2".into())
+    }
+
+    #[zbus(signal)]
+    async fn notification_closed(em: &SignalEmitter<'_>, id: u32, reason: u32) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn action_invoked(em: &SignalEmitter<'_>, id: u32, action_key: &str) -> zbus::Result<()>;
+}
+
+fn strip_markup(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut tag = false;
+    for c in s.chars() {
+        match c {
+            '<' => tag = true,
+            '>' if tag => tag = false,
+            _ if !tag => out.push(c),
+            _ => {}
+        }
+    }
+    out.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'")
+}
+
+pub fn invoke(id: u32, key: &str) {
+    let conn = CONN.get().and_then(|m| m.lock().ok()).and_then(|g| g.clone());
+    if let Some(c) = conn {
+        let _ = c.emit_signal(None::<&str>, "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "ActionInvoked", &(id, key));
+        let _ = c.emit_signal(None::<&str>, "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "NotificationClosed", &(id, 2u32));
+    }
+}
+
+pub fn closed(id: u32, reason: u32) {
+    let conn = CONN.get().and_then(|m| m.lock().ok()).and_then(|g| g.clone());
+    if let Some(c) = conn {
+        let _ = c.emit_signal(None::<&str>, "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "NotificationClosed", &(id, reason));
+    }
+}
+
+fn run(w: &Waker) -> zbus::Result<()> {
+    let conn = Connection::session()?;
+    conn.object_server().at("/org/freedesktop/Notifications", Server { w: w.clone() })?;
+    let dbus = zbus::blocking::fdo::DBusProxy::new(&conn)?;
+    let flags = zbus::fdo::RequestNameFlags::DoNotQueue;
+    loop {
+        let r = dbus.request_name(zbus::names::WellKnownName::from_static_str("org.freedesktop.Notifications")?, flags.into());
+        if matches!(r, Ok(zbus::fdo::RequestNameReply::PrimaryOwner) | Ok(zbus::fdo::RequestNameReply::AlreadyOwner)) {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(3));
+    }
+    let _ = CONN.set(Mutex::new(Some(conn.clone())));
+    loop {
+        std::thread::sleep(Duration::from_secs(3600));
+    }
+}
+
+pub fn start(w: Waker) {
+    let _ = std::thread::Builder::new().name("loka-notify".into()).stack_size(512 * 1024).spawn(move || {
+        loop {
+            let _ = run(&w);
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_markup;
+
+    #[test]
+    fn markup_is_stripped() {
+        assert_eq!(strip_markup("<b>Hi</b> &amp; <i>bye</i>"), "Hi & bye");
+        assert_eq!(strip_markup("a &lt; b"), "a < b");
+    }
+}
