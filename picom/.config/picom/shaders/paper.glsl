@@ -53,12 +53,14 @@ vec4 window_shader() {
     vec3 rgb = c.rgb / c.a;
 
     float l = tone(rgb);
-    float hi = l, sum = 0.0;
+    float hi = l, lo = l, sum = 0.0;
     for (int i = 0; i < 8; i++) {
         float t = tone_at(p + RING[i]);
         hi = max(hi, t);
+        lo = min(lo, t);
         sum += t;
     }
+    float grain = smoothstep(0.004, 0.012, hi - lo) * (1.0 - smoothstep(0.05, 0.09, hi - lo));
     float d = hi - l;
     if (hi > TEXT_ON && hi - sum / 8.0 < 0.5 * d + 0.05 && d > 0.02 && d < GAP)
         l = hi - mix(d, GAP, clamp((d - 0.02) / 0.06, 0.0, 1.0));
@@ -69,7 +71,8 @@ vec4 window_shader() {
 
     ivec2 s = ivec2(gl_FragCoord.xy) & 3;
     float threshold = (BAYER[s.y * 4 + s.x] + 0.5) / 16.0 - 0.5;
-    float q = clamp(floor(clamp(l, 0.0, 1.0) * LEVELS + 0.5 + threshold * 0.9) / LEVELS, 0.0, 1.0);
+    float printed = floor(clamp(l, 0.0, 1.0) * LEVELS + 0.5 + threshold * 0.9) / LEVELS;
+    float q = clamp(mix(l, printed, grain), 0.0, 1.0);
 
     vec3 page = lin(INK) + (lin(PAPER) - lin(INK)) * q;
     vec3 tint = lin(rgb) / max(luma(rgb), 1e-3) * dot(page, vec3(0.2126, 0.7152, 0.0722));
@@ -77,7 +80,7 @@ vec4 window_shader() {
 
     vec2 g = gl_FragCoord.xy;
     float fibre = vnoise(g * vec2(0.9, 0.22)) * 0.6 + vnoise(g * 0.45) * 0.4 - 0.5;
-    page *= 1.0 + fibre * FIBRE * q;
+    page *= 1.0 + fibre * FIBRE * q * grain;
 
     vec3 outc = clamp(srgb(page), 0.0, 1.0);
     return default_post_processing(vec4(outc * c.a, c.a));
