@@ -81,8 +81,8 @@ pub struct Palette {
 }
 
 impl Palette {
-    pub fn raw(&self, key: &str) -> Option<String> {
-        self.map.get(key).cloned()
+    pub fn raw(&self, key: &str) -> Option<&str> {
+        self.map.get(key).map(String::as_str)
     }
 
     pub fn c(&self, key: &str, fallback: &str) -> Rgba {
@@ -131,7 +131,7 @@ pub fn rice_look(pal: &Palette) -> (String, String, String) {
     let r = |f: &str| std::fs::read_to_string(st.join(f)).map(|s| s.trim().to_owned()).unwrap_or_default();
     let scene = r("scene");
     let live = r("live");
-    let mood = pal.raw("mode").unwrap_or_else(|| "night".into());
+    let mood = pal.raw("mode").unwrap_or("night").to_owned();
     (if scene.is_empty() { "picture".into() } else { scene }, if live.is_empty() { "off".into() } else { live }, mood)
 }
 
@@ -149,29 +149,26 @@ pub struct Island {
 impl Island {
     pub fn from(t: &Theme) -> Self {
         let h = |s: &str| Rgba::hex(s).unwrap_or(Rgba::new(1.0, 1.0, 1.0, 1.0));
-        let (mut bg, mut fg, mut on, mut ok, mut crit) = match t.world.id {
-            WorldId::Meridian => (h("#000000"), h("#eceff4"), h("#eceff4"), h("#eceff4"), h("#d71921")),
-            WorldId::Sakuga => (h("#0a0b10"), h("#f4f6fa"), h("#e23a42"), h("#f4f6fa"), h("#ff4d57")),
-            WorldId::Katha => (h("#0e1440"), h("#f6ebd3"), h("#e8b04a"), h("#f28fb0"), h("#e2553f")),
-            WorldId::Toon => (h("#2a2244"), h("#fff5e4"), h("#ffd45c"), h("#8ee3c8"), h("#ff7a8a")),
+        let (mut bg, mut fg, mut on, mut crit) = match t.world.id {
+            WorldId::Meridian => (h("#000000"), h("#eceff4"), h("#eceff4"), h("#d71921")),
+            WorldId::Sakuga => (h("#0a0b10"), h("#f4f6fa"), h("#e23a42"), h("#ff4d57")),
+            WorldId::Katha => (h("#0e1440"), h("#f6ebd3"), h("#e8b04a"), h("#e2553f")),
+            WorldId::Toon => (h("#2a2244"), h("#fff5e4"), h("#ffd45c"), h("#ff7a8a")),
         };
         let p = &t.pal;
         if p.raw("accent").is_some() {
-            if p.raw("mode").as_deref() == Some("paper") {
+            if p.raw("mode") == Some("paper") {
                 bg = p.c("bg", "#e4e2dd");
                 fg = p.c("fg", "#222222");
                 on = fg;
-                ok = p.c("accent", "#222222");
                 crit = p.c("red", "#aa3333");
             } else if t.world.id == WorldId::Sakuga {
                 bg = p.c("crust", "#0a0b10");
                 fg = p.c("fg", "#f4f6fa");
                 on = p.c("accent", "#e23a42");
-                ok = p.c("accent2", "#f4f6fa");
                 crit = p.c("red", "#ff4d57");
             }
         }
-        let _ = ok;
         Island { bg, fg, on, crit, muted: fg.alpha(0.45), line: fg.alpha(0.10), hover: fg.alpha(0.10) }
     }
 

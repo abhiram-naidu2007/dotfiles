@@ -209,7 +209,7 @@ impl Island {
         if self.peek && self.osd.is_none() && self.toast.is_none() {
             return (420.0, 72.0);
         }
-        if let Some((_, _, _, _)) = self.osd {
+        if self.osd.is_some() {
             return (300.0, PILL_H);
         }
         if let Some(to) = &self.toast {
@@ -274,18 +274,10 @@ impl Island {
     }
 
     pub fn show_toast(&mut self, title: &str, body: &str, secs: u64, now: Instant) {
-        self.show(Toast {
-            glyph: "\u{f009a}".into(),
-            label: String::new(),
-            title: title.into(),
-            body: body.into(),
-            ring: None,
-            notif: None,
-            action: None,
-            default_action: false,
-            force: true,
-            until: now + Duration::from_secs(secs),
-        }, now);
+        let mut t = Toast::plain("\u{f009a}", "", title, None, now + Duration::from_secs(secs));
+        t.body = body.into();
+        t.force = true;
+        self.show(t, now);
     }
 
     pub fn show(&mut self, t: Toast, now: Instant) {
@@ -337,14 +329,14 @@ impl Island {
         }
     }
 
-    fn render_content(&mut self, fonts: &mut Fonts, m: &mut Model, now: Instant) {
+    fn render_content(&mut self, fonts: &mut Fonts, m: &Model, now: Instant) {
         let (cw, ch) = (self.content.width() as i32, self.content.height() as i32);
         canvas::clear(&mut self.content, IRect::new(0, 0, cw, ch));
         let mut ui = Ui {
             pm: &mut self.content,
             fonts,
             th: self.pal,
-            font: "JetBrainsMono Nerd Font".into(),
+            font: "JetBrainsMono Nerd Font",
             size: 15.0,
             x: PAD,
             w: PANEL_W - PAD * 2.0,
@@ -359,7 +351,7 @@ impl Island {
         self.content_dirty = false;
     }
 
-    pub fn render(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, m: &mut Model, now: Instant) -> IRect {
+    pub fn render(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, m: &Model, now: Instant) -> IRect {
         if self.content_dirty && self.expanded {
             let before = self.content_h;
             let t0 = Instant::now();
@@ -408,7 +400,7 @@ impl Island {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw_collapsed(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, x: f32, w: f32, h: f32, oy: f32, now: Instant) {
+    fn draw_collapsed(&self, pm: &mut Pixmap, fonts: &mut Fonts, x: f32, w: f32, h: f32, oy: f32, now: Instant) {
         let p = self.pal;
         let cy = oy + h / 2.0;
         if let Some((kind, v, muted, _)) = self.osd {
@@ -431,7 +423,7 @@ impl Island {
             fonts.draw(pm, &t, &ts, x + w - 16.0 - tw2, cy, p.muted, None);
             return;
         }
-        if let Some(to) = self.toast.clone() {
+        if let Some(to) = &self.toast {
             let ts = crate::text::TextStyle::new("JetBrainsMono Nerd Font", 13.0, 700);
             let bs = crate::text::TextStyle::new("JetBrainsMono Nerd Font", 11.5, 400);
             let st = crate::text::TextStyle::new(crate::ui::ICON, 16.0, 400);
@@ -464,15 +456,15 @@ impl Island {
             dot::draw_ratio(pm, &self.clock, big, 0.1, (x + 24.0).round(), (cy - 18.0).round(), p.fg.alpha(a));
             let ds = crate::text::TextStyle::new("JetBrainsMono Nerd Font", 12.0, 400);
             fonts.draw(pm, &self.date, &ds, x + 24.0, cy + 17.0, p.muted.alpha(a), None);
-            if let Some((t, ar, pos)) = self.media.clone() {
+            if let Some((t, ar, pos)) = &self.media {
                 let right = x + w - 24.0;
                 let cw = 200.0f32.min(w - 180.0);
                 let ts = crate::text::TextStyle::new("JetBrainsMono Nerd Font", 12.5, 600);
                 let as_ = crate::text::TextStyle::new("JetBrainsMono Nerd Font", 11.0, 400);
-                let tw = fonts.measure(&t, &ts).min(cw);
-                fonts.draw_elided(pm, &t, &ts, right - tw, cy - 13.0, p.fg.alpha(a), cw);
-                let aw = fonts.measure(&ar, &as_).min(cw);
-                fonts.draw_elided(pm, &ar, &as_, right - aw, cy + 3.0, p.muted.alpha(a), cw);
+                let tw = fonts.measure(t, &ts).min(cw);
+                fonts.draw_elided(pm, t, &ts, right - tw, cy - 13.0, p.fg.alpha(a), cw);
+                let aw = fonts.measure(ar, &as_).min(cw);
+                fonts.draw_elided(pm, ar, &as_, right - aw, cy + 3.0, p.muted.alpha(a), cw);
                 canvas::fill_round(pm, right - 120.0, cy + 15.0, 120.0, 3.0, 1.5, p.fg.alpha(0.15 * a), Transform::identity());
                 canvas::fill_round(pm, right - 120.0, cy + 15.0, 120.0 * pos.clamp(0.0, 1.0), 3.0, 1.5, p.fg.alpha(a), Transform::identity());
             }
@@ -489,20 +481,20 @@ impl Island {
             } else {
                 let lift = dot::height(size) + 6.0;
                 let mut cx = x0;
+                let (mut ab, mut bb) = ([0u8; 4], [0u8; 4]);
                 for (a, b) in self.prev_clock.chars().zip(self.clock.chars()) {
-                    let s = b.to_string();
+                    let s = &*b.encode_utf8(&mut bb);
                     let cw = dot::char_width(b, size);
                     if a == b {
-                        dot::draw(pm, &s, size, cx, y0, p.fg);
+                        dot::draw(pm, s, size, cx, y0, p.fg);
                     } else {
-                        dot::draw_clipped(pm, &a.to_string(), size, cx, y0 - t * lift, p.fg.alpha((1.0 - t).clamp(0.0, 1.0)), y0 - 1.0, y0 + dot::height(size) + 1.0);
-                        dot::draw_clipped(pm, &s, size, cx, y0 + (1.0 - t) * lift, p.fg.alpha(t.clamp(0.0, 1.0)), y0 - 1.0, y0 + dot::height(size) + 1.0);
+                        dot::draw_clipped(pm, a.encode_utf8(&mut ab), size, cx, y0 - t * lift, p.fg.alpha((1.0 - t).clamp(0.0, 1.0)), y0 - 1.0, y0 + dot::height(size) + 1.0);
+                        dot::draw_clipped(pm, s, size, cx, y0 + (1.0 - t) * lift, p.fg.alpha(t.clamp(0.0, 1.0)), y0 - 1.0, y0 + dot::height(size) + 1.0);
                     }
                     cx += cw + dot::pitch(size);
                 }
             }
         }
-        let _ = now;
     }
 
     pub fn motion(&mut self, x: f32, y: f32, now: Instant) -> Option<Ev> {
@@ -595,7 +587,7 @@ impl Island {
         Some(Ev::Act(hit.act))
     }
 
-    pub fn warm(&mut self, fonts: &mut Fonts, m: &mut Model, now: Instant) {
+    pub fn warm(&mut self, fonts: &mut Fonts, m: &Model, now: Instant) {
         let keep = (self.page, self.content_h, std::mem::take(&mut self.hits));
         for p in ["main", "wifi", "bt", "audio", "power", "cal", "notif", "clip", "settings", "battery", "record"] {
             self.page = p;

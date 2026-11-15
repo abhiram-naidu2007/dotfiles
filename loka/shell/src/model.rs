@@ -55,7 +55,6 @@ pub struct Notif {
     pub app: String,
     pub summary: String,
     pub body: String,
-    pub icon: String,
     pub critical: bool,
     pub time: String,
     pub actions: Vec<(String, String)>,

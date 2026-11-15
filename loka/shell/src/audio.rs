@@ -2,7 +2,7 @@ use std::ffi::CString;
 use std::io::BufReader;
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use pulseaudio::protocol::{self, ChannelVolume, Command, Prop, Volume as PaVolume};
@@ -34,10 +34,10 @@ pub enum Ctl {
     DefaultSource(String),
 }
 
-static CTL: OnceLock<Mutex<Sender<Ctl>>> = OnceLock::new();
+static CTL: OnceLock<Sender<Ctl>> = OnceLock::new();
 
 pub fn control(c: Ctl) {
-    if let Some(tx) = CTL.get().and_then(|m| m.lock().ok()) {
+    if let Some(tx) = CTL.get() {
         let _ = tx.send(c);
     }
 }
@@ -186,16 +186,13 @@ fn default_source(c: &mut Conn) -> Res<protocol::SourceInfo> {
 
 fn apply(c: &mut Conn, cmd: Ctl) -> Res<()> {
     match cmd {
-        Ctl::Step(d) => {
+        Ctl::Step(_) | Ctl::Set(_) => {
             let s = default_sink(c)?;
-            let v = (level(&s.cvolume) + d).clamp(0.0, 1.0);
-            if s.muted {
-                ack(c, Command::SetSinkMute(protocol::SetDeviceMuteParams { device_index: Some(s.index), device_name: None, mute: false }))?;
-            }
-            ack(c, Command::SetSinkVolume(protocol::SetDeviceVolumeParams { device_index: Some(s.index), device_name: None, volume: cvol(s.cvolume.channels().len(), v) }))
-        }
-        Ctl::Set(v) => {
-            let s = default_sink(c)?;
+            let v = match cmd {
+                Ctl::Step(d) => level(&s.cvolume) + d,
+                Ctl::Set(v) => v,
+                _ => unreachable!(),
+            };
             if s.muted {
                 ack(c, Command::SetSinkMute(protocol::SetDeviceMuteParams { device_index: Some(s.index), device_name: None, mute: false }))?;
             }
@@ -234,36 +231,32 @@ fn apply(c: &mut Conn, cmd: Ctl) -> Res<()> {
 
 fn controller(rx: Receiver<Ctl>) {
     let mut conn: Option<Conn> = None;
-    while let Ok(mut cmd) = rx.recv() {
-        while let Ok(next) = rx.try_recv() {
-            let same = matches!((&cmd, &next), (Ctl::Set(_), Ctl::Set(_)) | (Ctl::MicSet(_), Ctl::MicSet(_)))
-                || matches!((&cmd, &next), (Ctl::StreamSet(a, _), Ctl::StreamSet(b, _)) if a == b);
-            if same {
-                cmd = next;
-            } else {
-                if conn.is_none() {
-                    conn = connect("loka-control").ok();
-                }
-                if let Some(c) = conn.as_mut()
-                    && apply(c, cmd).is_err() {
-                        conn = None;
-                    }
-                cmd = next;
-            }
-        }
+    let mut run = |cmd: Ctl| {
         if conn.is_none() {
             conn = connect("loka-control").ok();
         }
         if let Some(c) = conn.as_mut()
-            && apply(c, cmd).is_err() {
-                conn = None;
+            && apply(c, cmd).is_err()
+        {
+            conn = None;
+        }
+    };
+    while let Ok(mut cmd) = rx.recv() {
+        while let Ok(next) = rx.try_recv() {
+            let same = matches!((&cmd, &next), (Ctl::Set(_), Ctl::Set(_)) | (Ctl::MicSet(_), Ctl::MicSet(_)))
+                || matches!((&cmd, &next), (Ctl::StreamSet(a, _), Ctl::StreamSet(b, _)) if a == b);
+            if !same {
+                run(cmd);
             }
+            cmd = next;
+        }
+        run(cmd);
     }
 }
 
 pub fn start(w: Waker) {
     let (tx, rx) = channel();
-    let _ = CTL.set(Mutex::new(tx));
+    let _ = CTL.set(tx);
     let _ = std::thread::Builder::new().name("loka-audio-ctl".into()).stack_size(256 * 1024).spawn(move || controller(rx));
     let _ = std::thread::Builder::new().name("loka-audio".into()).stack_size(512 * 1024).spawn(move || {
         loop {

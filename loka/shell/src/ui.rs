@@ -6,7 +6,7 @@ use crate::theme::Island;
 
 pub const ICON: &str = "JetBrainsMono Nerd Font";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Act {
     None,
     Page(&'static str),
@@ -55,7 +55,7 @@ pub enum Act {
     TermOpacity(u8),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash)]
 pub enum Slider {
     Volume,
     Mic,
@@ -75,7 +75,7 @@ pub struct Ui<'a> {
     pub pm: &'a mut Pixmap,
     pub fonts: &'a mut Fonts,
     pub th: Island,
-    pub font: String,
+    pub font: &'static str,
     pub size: f32,
     pub x: f32,
     pub w: f32,
@@ -88,13 +88,13 @@ pub struct Ui<'a> {
 pub fn key_of(a: &Act) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    format!("{a:?}").hash(&mut h);
+    a.hash(&mut h);
     h.finish()
 }
 
 impl<'a> Ui<'a> {
     pub fn txt(&self, size: f32, weight: u16) -> TextStyle {
-        TextStyle::new(&self.font, size, weight)
+        TextStyle::new(self.font, size, weight)
     }
 
     pub fn icon_style(size: f32) -> TextStyle {

@@ -59,7 +59,7 @@ impl Menu {
             self.hits.push((IRect::new(PAD as i32, y as i32, (W - PAD * 2.0) as i32, ROW as i32), Some(usize::MAX)));
             y += ROW;
         }
-        let items = self.items().to_vec();
+        let items = self.stack.last().map(|v| v.as_slice()).unwrap_or(&[]);
         for (i, it) in items.iter().enumerate() {
             if it.separator {
                 canvas::fill_round(pm, PAD + 8.0, y + SEP / 2.0, W - PAD * 2.0 - 16.0, 1.0, 0.0, th.fg.alpha(0.12), Transform::identity());

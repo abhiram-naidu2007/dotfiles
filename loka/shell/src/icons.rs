@@ -101,75 +101,54 @@ fn find_icon(name: &str) -> Option<PathBuf> {
             }
         }
     }
-    for ext in ["svg", "png", "xpm"] {
-        let f = PathBuf::from("/usr/share/pixmaps").join(format!("{name}.{ext}"));
-        if f.exists() && ext != "xpm" {
-            return Some(f);
-        }
-    }
-    None
+    ["svg", "png"].iter().map(|ext| PathBuf::from(format!("/usr/share/pixmaps/{name}.{ext}"))).find(|f| f.exists())
 }
 
-pub fn load_scaled(path: &Path, width: u32) -> Option<Pixmap> {
-    let data = std::fs::read(path).ok()?;
-    let dec = png::Decoder::new(std::io::Cursor::new(data));
-    let r = dec.read_info().ok()?;
-    let (w0, h0) = { let i = r.info(); (i.width, i.height) };
-    let height = (h0 as f32 * width as f32 / w0 as f32).round() as u32;
-    drop(r);
-    let full = render_path_wh(path, w0, h0)?;
-    let mut out = Pixmap::new(width, height.max(1))?;
-    let k = width as f32 / w0 as f32;
+fn decode_png(data: &[u8]) -> Option<Pixmap> {
+    let mut r = png::Decoder::new(std::io::Cursor::new(data)).read_info().ok()?;
+    let mut buf = vec![0; r.output_buffer_size()?];
+    let info = r.next_frame(&mut buf).ok()?;
+    let b = &buf[..info.buffer_size()];
+    let mut pm = Pixmap::new(info.width, info.height)?;
+    let px = pm.data_mut().as_chunks_mut::<4>().0;
+    let mut put = |i: usize, r: u8, g: u8, b: u8, a: u8| {
+        let m = |c: u8| (c as u16 * a as u16 / 255) as u8;
+        px[i] = [m(r), m(g), m(b), a];
+    };
+    match info.color_type {
+        png::ColorType::Rgba => b.as_chunks::<4>().0.iter().enumerate().for_each(|(i, c)| put(i, c[0], c[1], c[2], c[3])),
+        png::ColorType::Rgb => b.as_chunks::<3>().0.iter().enumerate().for_each(|(i, c)| put(i, c[0], c[1], c[2], 255)),
+        png::ColorType::GrayscaleAlpha => b.as_chunks::<2>().0.iter().enumerate().for_each(|(i, c)| put(i, c[0], c[0], c[0], c[1])),
+        png::ColorType::Grayscale => b.iter().enumerate().for_each(|(i, c)| put(i, *c, *c, *c, 255)),
+        _ => return None,
+    }
+    Some(pm)
+}
+
+pub fn scaled(src: &Pixmap, w: u32, h: u32, k: f32) -> Option<Pixmap> {
+    let mut out = Pixmap::new(w.max(1), h.max(1))?;
     let paint = PixmapPaint { quality: FilterQuality::Bicubic, ..PixmapPaint::default() };
-    out.draw_pixmap(0, 0, full.as_ref(), &paint, Transform::from_scale(k, k), None);
+    out.draw_pixmap(0, 0, src.as_ref(), &paint, Transform::from_scale(k, k), None);
     Some(out)
 }
 
-fn render_path_wh(path: &Path, w: u32, h: u32) -> Option<Pixmap> {
-    let mut p = render_path(path, w.max(h))?;
-    if w != h {
-        let mut out = Pixmap::new(w, h)?;
-        out.draw_pixmap(0, 0, p.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
-        p = out;
-    }
-    Some(p)
+pub fn load_scaled(path: &Path, width: u32) -> Option<Pixmap> {
+    let src = decode_png(&std::fs::read(path).ok()?)?;
+    let k = width as f32 / src.width() as f32;
+    scaled(&src, width, (src.height() as f32 * k).round() as u32, k)
 }
 
 pub fn render_path(path: &Path, size: u32) -> Option<Pixmap> {
     let data = std::fs::read(path).ok()?;
-    let mut out = Pixmap::new(size, size)?;
     if path.extension().and_then(|x| x.to_str()) == Some("svg") {
         let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()).ok()?;
         let s = tree.size();
-        let k = size as f32 / s.width().max(s.height());
-        resvg::render(&tree, Transform::from_scale(k, k), &mut out.as_mut());
+        let mut out = Pixmap::new(size, size)?;
+        resvg::render(&tree, Transform::from_scale(size as f32 / s.width().max(s.height()), size as f32 / s.width().max(s.height())), &mut out.as_mut());
         return Some(out);
     }
-    let dec = png::Decoder::new(std::io::Cursor::new(data));
-    let mut r = dec.read_info().ok()?;
-    let mut buf = vec![0; r.output_buffer_size()?];
-    let info = r.next_frame(&mut buf).ok()?;
-    let (w, h) = (info.width, info.height);
-    let b = &buf[..info.buffer_size()];
-    let rgba: Vec<u8> = match info.color_type {
-        png::ColorType::Rgba => b.to_vec(),
-        png::ColorType::Rgb => b.as_chunks::<3>().0.iter().flat_map(|c| [c[0], c[1], c[2], 255]).collect(),
-        png::ColorType::GrayscaleAlpha => b.as_chunks::<2>().0.iter().flat_map(|c| [c[0], c[0], c[0], c[1]]).collect(),
-        png::ColorType::Grayscale => b.iter().flat_map(|c| [*c, *c, *c, 255]).collect(),
-        _ => return None,
-    };
-    let mut src = Pixmap::new(w, h)?;
-    for (d, s) in src.data_mut().as_chunks_mut::<4>().0.iter_mut().zip(rgba.as_chunks::<4>().0.iter()) {
-        let a = s[3] as u16;
-        d[0] = (s[0] as u16 * a / 255) as u8;
-        d[1] = (s[1] as u16 * a / 255) as u8;
-        d[2] = (s[2] as u16 * a / 255) as u8;
-        d[3] = s[3];
-    }
-    let k = size as f32 / w.max(h) as f32;
-    let paint = PixmapPaint { quality: FilterQuality::Bicubic, ..PixmapPaint::default() };
-    out.draw_pixmap(0, 0, src.as_ref(), &paint, Transform::from_scale(k, k), None);
-    Some(out)
+    let src = decode_png(&data)?;
+    scaled(&src, size, size, size as f32 / src.width().max(src.height()) as f32)
 }
 
 impl Icons {

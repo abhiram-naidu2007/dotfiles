@@ -1,9 +1,8 @@
-use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
+use tiny_skia::Pixmap;
 use zbus::blocking::{Connection, MessageIterator, Proxy};
 use zbus::object_server::SignalEmitter;
 
@@ -24,8 +23,7 @@ impl std::fmt::Debug for TrayItem {
 
 impl PartialEq for TrayItem {
     fn eq(&self, o: &Self) -> bool {
-        self.key == o.key && self.id == o.id && self.icon.as_ref().map(|p| p.data().len()) == o.icon.as_ref().map(|p| p.data().len())
-            && self.icon.as_ref().map(|p| p.data()) == o.icon.as_ref().map(|p| p.data())
+        self.key == o.key && self.id == o.id && self.icon.as_ref().map(|p| p.data()) == o.icon.as_ref().map(|p| p.data())
     }
 }
 
@@ -35,10 +33,10 @@ pub enum Act {
     Menu(String, i32, i32),
 }
 
-static CTL: OnceLock<Mutex<Sender<Act>>> = OnceLock::new();
+static CTL: OnceLock<Sender<Act>> = OnceLock::new();
 
 pub fn act(a: Act) {
-    if let Some(tx) = CTL.get().and_then(|m| m.lock().ok()) {
+    if let Some(tx) = CTL.get() {
         let _ = tx.send(a);
     }
 }
@@ -149,11 +147,7 @@ fn pixmap_from_argb(list: &[(i32, i32, Vec<u8>)], size: u32) -> Option<Pixmap> {
         d[2] = (s[3] as u16 * a / 255) as u8;
         d[3] = s[0];
     }
-    let mut out = Pixmap::new(size, size)?;
-    let k = size as f32 / (*w).max(*h) as f32;
-    let paint = PixmapPaint { quality: FilterQuality::Bicubic, ..PixmapPaint::default() };
-    out.draw_pixmap(0, 0, src.as_ref(), &paint, Transform::from_scale(k, k), None);
-    Some(out)
+    crate::icons::scaled(&src, size, size, size as f32 / (*w).max(*h) as f32)
 }
 
 fn read_item(conn: &Connection, key: &str) -> Option<TrayItem> {
@@ -279,7 +273,7 @@ fn run(w: &Waker) -> zbus::Result<()> {
     }
 
     let (act_tx, act_rx) = channel::<Act>();
-    let _ = CTL.set(Mutex::new(act_tx));
+    let _ = CTL.set(act_tx);
     let c3 = conn.clone();
     std::thread::Builder::new().name("loka-tray-act".into()).stack_size(256 * 1024).spawn(move || actions(c3, act_rx)).ok();
 
@@ -293,8 +287,6 @@ fn run(w: &Waker) -> zbus::Result<()> {
         std::thread::sleep(Duration::from_millis(120));
         while ch_rx.try_recv().is_ok() {}
         let keys = items.lock().map(|v| v.clone()).unwrap_or_default();
-        let live: HashSet<String> = keys.iter().cloned().collect();
-        last.retain(|i| live.contains(&i.key));
         snapshot(&conn, &keys, w, &mut last);
     }
     Ok(())
@@ -387,28 +379,22 @@ pub fn fetch_menu(key: String, w: Waker) {
 }
 
 fn fetch_menu_inner(key: &str, w: &Waker) -> zbus::Result<()> {
-    {
-        let conn = Connection::session()?;
-        let p = item_proxy(&conn, key)?;
-        let path: zbus::zvariant::OwnedObjectPath = p.get_property("Menu")?;
-        let (dest, _) = split(key);
-        let mp = zbus::blocking::proxy::Builder::<Proxy>::new(&conn)
-            .destination(dest)?
-            .path(path.to_string())?
-            .interface("com.canonical.dbusmenu")?
-            .cache_properties(zbus::proxy::CacheProperties::No)
-            .build()?;
-        let _: zbus::Result<bool> = mp.call("AboutToShow", &(0i32,));
-        let props: Vec<&str> = vec![];
-        type Layout = (i32, std::collections::HashMap<String, zbus::zvariant::OwnedValue>, Vec<zbus::zvariant::OwnedValue>);
-        let (_, root): (u32, Layout) = mp.call("GetLayout", &(0i32, -1i32, props))?;
-        let items: Vec<MenuItem> = root.2.iter().filter_map(|c| walk(c)).collect();
-        if std::env::var_os("LOKA_DEBUG").is_some() {
-            eprintln!("loka: menu {} children raw {} parsed {} first {:?}", key, root.2.len(), items.len(), root.2.first());
-        }
-        w.send(Msg::TrayMenu(key.to_owned(), path.to_string(), items));
-        Ok(())
-    }
+    let conn = Connection::session()?;
+    let p = item_proxy(&conn, key)?;
+    let path: zbus::zvariant::OwnedObjectPath = p.get_property("Menu")?;
+    let (dest, _) = split(key);
+    let mp = zbus::blocking::proxy::Builder::<Proxy>::new(&conn)
+        .destination(dest)?
+        .path(path.to_string())?
+        .interface("com.canonical.dbusmenu")?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()?;
+    let _: zbus::Result<bool> = mp.call("AboutToShow", &(0i32,));
+    type Layout = (i32, std::collections::HashMap<String, zbus::zvariant::OwnedValue>, Vec<zbus::zvariant::OwnedValue>);
+    let (_, root): (u32, Layout) = mp.call("GetLayout", &(0i32, -1i32, Vec::<&str>::new()))?;
+    let items: Vec<MenuItem> = root.2.iter().filter_map(|c| walk(c)).collect();
+    w.send(Msg::TrayMenu(key.to_owned(), path.to_string(), items));
+    Ok(())
 }
 
 pub fn menu_event(key: String, path: String, id: i32) {

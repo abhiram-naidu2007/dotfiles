@@ -4,9 +4,10 @@ use std::time::{Duration, Instant};
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::anim::{Ease, Tween};
-use crate::canvas::{self, IRect, Rgba};
+use crate::canvas::{self, IRect};
 use crate::config::home;
 use crate::text::{Fonts, TextStyle};
+use crate::services::{Msg, Waker};
 use crate::theme::{Island, Theme, World, WorldId};
 
 const CARD_W: f32 = 766.0;
@@ -14,8 +15,8 @@ const CARD_H: f32 = 360.0;
 const SLOT: f32 = 330.0;
 const DECODE_W: u32 = 620;
 
-#[derive(Clone)]
-struct Item {
+#[derive(Clone, Debug)]
+pub struct Item {
     path: String,
     video: bool,
     thumb: String,
@@ -34,6 +35,9 @@ pub struct Walls {
     outline: Option<Pixmap>,
     hits: Vec<(IRect, WAct)>,
     dirty: bool,
+    loading: bool,
+    islands: [Island; 4],
+    waker: Waker,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -64,14 +68,35 @@ fn title(w: WorldId) -> &'static str {
     }
 }
 
-fn island_of(w: WorldId) -> Island {
+fn islands() -> [Island; 4] {
     let mut t = Theme::load();
-    t.world = World::get(w);
-    Island::from(&t)
+    ORDER.map(|w| {
+        t.world = World::get(w);
+        Island::from(&t)
+    })
+}
+
+fn slot(w: WorldId) -> usize {
+    ORDER.iter().position(|x| *x == w).unwrap_or(0)
+}
+
+fn list(world: WorldId) -> Vec<Item> {
+    let out = std::process::Command::new(home().join(".local/bin/rice")).args(["world-walls", wname(world)]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    out.lines()
+        .filter_map(|l| {
+            let p: Vec<&str> = l.split('|').collect();
+            (p.len() >= 3).then(|| Item {
+                path: p[0].to_owned(),
+                video: p[1] == "video",
+                thumb: p[2].to_owned(),
+                name: std::path::Path::new(p[0]).file_stem().map(|s| s.to_string_lossy().replace(['-', '_'], " ")).unwrap_or_default(),
+            })
+        })
+        .collect()
 }
 
 impl Walls {
-    pub fn new() -> Self {
+    pub fn new(waker: Waker) -> Self {
         Self {
             open: false,
             world: WorldId::Meridian,
@@ -84,6 +109,9 @@ impl Walls {
             outline: None,
             hits: Vec::new(),
             dirty: false,
+            loading: false,
+            islands: islands(),
+            waker,
         }
     }
 
@@ -91,7 +119,8 @@ impl Walls {
         self.open = true;
         self.fade = Tween::fixed(0.0);
         self.fade.set(1.0, now, Duration::from_millis(200), Ease::OutCubic);
-        self.load(world, now);
+        self.islands = islands();
+        self.load(world);
         if self.outline.is_none() {
             self.outline = crate::icons::load_scaled(&crate::config::assets().join("card-outline.png"), DECODE_W);
         }
@@ -104,26 +133,25 @@ impl Walls {
         self.items.clear();
     }
 
-    fn load(&mut self, world: WorldId, now: Instant) {
+    fn load(&mut self, world: WorldId) {
         self.world = world;
         self.current = std::fs::read_to_string(home().join(format!(".local/state/rice/world-{}", wname(world)))).unwrap_or_default().trim().to_owned();
-        let out = std::process::Command::new(home().join(".local/bin/rice")).args(["world-walls", wname(world)]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-        self.items = out
-            .lines()
-            .filter_map(|l| {
-                let p: Vec<&str> = l.split('|').collect();
-                (p.len() >= 3).then(|| Item {
-                    path: p[0].to_owned(),
-                    video: p[1] == "video",
-                    thumb: p[2].to_owned(),
-                    name: std::path::Path::new(p[0]).file_stem().map(|s| s.to_string_lossy().replace(['-', '_'], " ")).unwrap_or_default(),
-                })
-            })
-            .collect();
+        self.items.clear();
+        self.cache.clear();
+        self.loading = true;
+        self.dirty = true;
+        let w = self.waker.clone();
+        std::thread::spawn(move || w.send(Msg::WallItems(world, list(world))));
+    }
+
+    pub fn set_items(&mut self, world: WorldId, items: Vec<Item>) {
+        if !self.open || world != self.world {
+            return;
+        }
+        self.items = items;
+        self.loading = false;
         self.index = self.items.iter().position(|i| i.path == self.current).unwrap_or(0);
         self.pos = Tween::fixed(self.index as f32);
-        self.cache.clear();
-        let _ = now;
         self.dirty = true;
     }
 
@@ -141,23 +169,22 @@ impl Walls {
         self.dirty = true;
     }
 
-    pub fn world_step(&mut self, d: i32, now: Instant) {
-        let i = ORDER.iter().position(|w| *w == self.world).unwrap_or(0) as i32;
-        let w = ORDER[((i + d).rem_euclid(4)) as usize];
-        self.load(w, now);
+    pub fn world_step(&mut self, d: i32) {
+        self.load(ORDER[(slot(self.world) as i32 + d).rem_euclid(4) as usize]);
     }
 
-    fn thumb(&mut self, i: usize) -> Option<&Pixmap> {
-        let key = self.items.get(i)?.thumb.clone();
-        if !self.cache.contains_key(&key) {
-            if self.cache.len() > 9 {
-                let keep: Vec<String> = (self.index.saturating_sub(3)..(self.index + 4).min(self.items.len())).map(|j| self.items[j].thumb.clone()).collect();
-                self.cache.retain(|k, _| keep.contains(k));
-            }
-            let p = crate::icons::load_scaled(std::path::Path::new(&key), DECODE_W)?;
+    fn warm_thumb(&mut self, i: usize) {
+        let Some(key) = self.items.get(i).map(|it| &it.thumb) else { return };
+        if self.cache.contains_key(key) {
+            return;
+        }
+        if self.cache.len() > 9 {
+            let near = &self.items[self.index.saturating_sub(3)..(self.index + 4).min(self.items.len())];
+            self.cache.retain(|k, _| near.iter().any(|it| &it.thumb == k));
+        }
+        if let Some(p) = crate::icons::load_scaled(std::path::Path::new(key), DECODE_W) {
             self.cache.insert(key.clone(), p);
         }
-        self.cache.get(&key)
     }
 
     pub fn render(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, now: Instant) -> IRect {
@@ -165,7 +192,7 @@ impl Walls {
         let full = IRect::new(0, 0, w as i32, h as i32);
         canvas::clear(pm, full);
         self.hits.clear();
-        let th = island_of(self.world);
+        let th = self.islands[slot(self.world)];
         let fade = self.fade.value(now);
         canvas::fill_round(pm, 0.0, 0.0, w, h, 0.0, th.bg.alpha(0.55 * fade), Transform::identity());
         self.hits.push((full, WAct::Close));
@@ -180,7 +207,7 @@ impl Walls {
         let mut tx = (w - total) / 2.0;
         let ty = h / 2.0 - 290.0;
         for (i, wd) in ORDER.into_iter().enumerate() {
-            let p = island_of(wd);
+            let p = self.islands[i];
             let on = wd == self.world;
             let tw = widths[i];
             canvas::fill_round(pm, tx, ty, tw, 40.0, 20.0, if on { p.on } else { p.bg.alpha(0.85) }.alpha(fade), Transform::identity());
@@ -198,6 +225,9 @@ impl Walls {
         let pos = self.pos.value(now);
         let mut order: Vec<usize> = (0..self.items.len()).filter(|i| (*i as f32 - pos).abs() < 4.5).collect();
         order.sort_by(|a, b| (*b as f32 - pos).abs().total_cmp(&(*a as f32 - pos).abs()));
+        for &i in &order {
+            self.warm_thumb(i);
+        }
         for i in order {
             let d = i as f32 - pos;
             let ad = d.abs();
@@ -210,7 +240,7 @@ impl Walls {
             let y0 = cy - chh / 2.0;
             let video = self.items[i].video;
             let is_cur = self.items[i].path == self.current;
-            if let Some(t) = self.thumb(i).cloned() {
+            if let Some(t) = self.cache.get(&self.items[i].thumb) {
                 let k = cw / t.width() as f32;
                 let paint = PixmapPaint { opacity: op, quality: FilterQuality::Bilinear, ..PixmapPaint::default() };
                 pm.draw_pixmap(0, 0, t.as_ref(), &paint, Transform::from_row(k, 0.0, 0.0, k, x0, y0), None);
@@ -238,7 +268,11 @@ impl Walls {
             self.hits.push((IRect::new(x0 as i32, y0 as i32, cw as i32, chh as i32), act));
         }
 
-        let name = self.items.get(self.index).map(|i| i.name.clone()).unwrap_or_else(|| format!("No wallpapers in ~/dotfiles/wallpaper/{}", wname(self.world)));
+        let name = match self.items.get(self.index) {
+            Some(i) => i.name.clone(),
+            None if self.loading => "Loading…".to_owned(),
+            None => format!("No wallpapers in ~/dotfiles/wallpaper/{}", wname(self.world)),
+        };
         let nst = TextStyle::new(disp, 20.0, 600);
         let nw = fonts.measure(&name, &nst);
         fonts.draw(pm, &name, &nst, (w - nw) / 2.0, h / 2.0 + 262.0, th.fg.alpha(fade), None);
@@ -247,7 +281,6 @@ impl Walls {
         let hw = fonts.measure(hint, &hst);
         fonts.draw(pm, hint, &hst, (w - hw) / 2.0, h / 2.0 + 290.0, th.fg.alpha(0.6 * fade), None);
         self.dirty = false;
-        let _ = Rgba::new(0.0, 0.0, 0.0, 0.0);
         full
     }
 
@@ -272,7 +305,7 @@ impl Walls {
                 pick
             }
             WAct::World(wd) => {
-                self.load(wd, now);
+                self.load(wd);
                 None
             }
         }

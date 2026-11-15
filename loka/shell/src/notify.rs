@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use zbus::blocking::Connection;
@@ -11,7 +11,7 @@ use crate::model::Notif;
 use crate::services::{Msg, Waker};
 
 static NEXT: AtomicU32 = AtomicU32::new(1);
-static CONN: OnceLock<Mutex<Option<Connection>>> = OnceLock::new();
+static CONN: OnceLock<Connection> = OnceLock::new();
 
 struct Server {
     w: Waker,
@@ -28,7 +28,7 @@ impl Server {
         &self,
         app_name: String,
         replaces_id: u32,
-        app_icon: String,
+        _app_icon: String,
         summary: String,
         body: String,
         actions: Vec<String>,
@@ -36,21 +36,15 @@ impl Server {
         expire_timeout: i32,
     ) -> u32 {
         let id = if replaces_id > 0 { replaces_id } else { NEXT.fetch_add(1, Ordering::Relaxed) };
-        if summary.contains("Some required themes are missing") {
+        if app_name == "osd" || summary.contains("Some required themes are missing") {
             return id;
         }
         let urgency = hints.get("urgency").and_then(|v| u8::try_from(v).ok()).unwrap_or(1);
-        if app_name == "osd" {
-            let value = hints.get("value").and_then(|v| i32::try_from(v).ok()).unwrap_or(-1);
-            self.w.send(Msg::Ipc(format!("osd {value} {summary}")));
-            return id;
-        }
         let n = Notif {
             id,
             app: if app_name.is_empty() { "Notification".into() } else { app_name },
             summary,
             body: strip_markup(&body),
-            icon: app_icon,
             critical: urgency >= 2,
             time: chrono::Local::now().format("%H:%M").to_string(),
             actions: actions.chunks(2).filter(|c| c.len() == 2).map(|c| (c[0].clone(), c[1].clone())).collect(),
@@ -89,19 +83,19 @@ fn strip_markup(s: &str) -> String {
     out.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'")
 }
 
-pub fn invoke(id: u32, key: &str) {
-    let conn = CONN.get().and_then(|m| m.lock().ok()).and_then(|g| g.clone());
-    if let Some(c) = conn {
-        let _ = c.emit_signal(None::<&str>, "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "ActionInvoked", &(id, key));
-        let _ = c.emit_signal(None::<&str>, "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "NotificationClosed", &(id, 2u32));
+fn emit<B: serde::Serialize + zbus::zvariant::DynamicType>(member: &str, body: &B) {
+    if let Some(c) = CONN.get() {
+        let _ = c.emit_signal(None::<&str>, "/org/freedesktop/Notifications", "org.freedesktop.Notifications", member, body);
     }
 }
 
+pub fn invoke(id: u32, key: &str) {
+    emit("ActionInvoked", &(id, key));
+    closed(id, 2);
+}
+
 pub fn closed(id: u32, reason: u32) {
-    let conn = CONN.get().and_then(|m| m.lock().ok()).and_then(|g| g.clone());
-    if let Some(c) = conn {
-        let _ = c.emit_signal(None::<&str>, "/org/freedesktop/Notifications", "org.freedesktop.Notifications", "NotificationClosed", &(id, reason));
-    }
+    emit("NotificationClosed", &(id, reason));
 }
 
 fn run(w: &Waker) -> zbus::Result<()> {
@@ -116,9 +110,9 @@ fn run(w: &Waker) -> zbus::Result<()> {
         }
         std::thread::sleep(Duration::from_secs(3));
     }
-    let _ = CONN.set(Mutex::new(Some(conn.clone())));
+    let _ = CONN.set(conn);
     loop {
-        std::thread::sleep(Duration::from_secs(3600));
+        std::thread::park();
     }
 }
 

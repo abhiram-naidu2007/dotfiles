@@ -8,7 +8,7 @@ use crate::dot;
 use crate::model::Model;
 use crate::ui::{Act, Slider, Ui};
 
-pub fn draw(page: &str, ui: &mut Ui, m: &mut Model, now: Instant) {
+pub fn draw(page: &str, ui: &mut Ui, m: &Model, now: Instant) {
     match page {
         "wifi" => wifi(ui, m),
         "bt" => bt(ui, m),
@@ -66,7 +66,7 @@ fn tile(ui: &mut Ui, x: f32, y: f32, w: f32, glyph: &str, title: &str, sub: &str
     ui.text_max(sub, &ss, x + 56.0, y + 40.0, th.muted, w - 64.0);
 }
 
-fn main(ui: &mut Ui, m: &mut Model, now: Instant) {
+fn main(ui: &mut Ui, m: &Model, now: Instant) {
     let th = ui.th;
     let (x, w) = (ui.x, ui.w);
     let y0 = ui.y;
@@ -123,7 +123,7 @@ fn main(ui: &mut Ui, m: &mut Model, now: Instant) {
     ui.slider("\u{f00df}", Act::None, m.bright, 1.0, Slider::Bright, &format!("{}%", (m.bright * 100.0).round() as i32));
     ui.space(4.0);
 
-    if let Some(md) = m.media.clone() {
+    if let Some(md) = &m.media {
         let y = ui.y;
         let h = 78.0;
         ui.card(x, y, w, h, false, false);
@@ -198,7 +198,7 @@ fn main(ui: &mut Ui, m: &mut Model, now: Instant) {
     }
     ui.y = y + 46.0;
     wall_card(ui, m);
-    let items: Vec<crate::tray::TrayItem> = m.tray.iter().filter(|t| t.icon.is_some()).cloned().collect();
+    let items: Vec<&crate::tray::TrayItem> = m.tray.iter().filter(|t| t.icon.is_some()).collect();
     if !items.is_empty() {
         let y = ui.y + 2.0;
         let ls = ui.txt(ui.size - 5.0, 700).tracking(1.0);
@@ -216,7 +216,7 @@ fn main(ui: &mut Ui, m: &mut Model, now: Instant) {
     }
 }
 
-fn wifi(ui: &mut Ui, m: &mut Model) {
+fn wifi(ui: &mut Ui, m: &Model) {
     ui.header("Wi-Fi networks", Some(("\u{f0450}", Act::WifiScan)));
     let th = ui.th;
     let (x, w) = (ui.x, ui.w);
@@ -228,7 +228,7 @@ fn wifi(ui: &mut Ui, m: &mut Model) {
     ui.button(x + bw + 10.0, y, bw, 34.0, "\u{f0415}", "Hidden…", false, Act::Exec(vec!["nm-connection-editor".into(), "--create".into(), "--type=802-11-wireless".into()]));
     ui.button(x + 2.0 * (bw + 10.0), y, bw, 34.0, "\u{f0493}", "Settings…", false, Act::Exec(vec!["nm-connection-editor".into()]));
     ui.y = y + 44.0;
-    if let Some(ssid) = m.pw_for.clone() {
+    if let Some(ssid) = &m.pw_for {
         let y = ui.y;
         let h = 44.0;
         ui.card(x, y, w, h, true, false);
@@ -248,8 +248,7 @@ fn wifi(ui: &mut Ui, m: &mut Model) {
     if m.wifi_busy && m.nets.is_empty() {
         ui.note("Scanning…");
     }
-    let nets = m.nets.clone();
-    for n in nets.iter().take(14) {
+    for n in m.nets.iter().take(14) {
         let sec = match n.security {
             "open" => "Open",
             "eap" => "Enterprise",
@@ -268,13 +267,13 @@ fn wifi(ui: &mut Ui, m: &mut Model) {
     }
 }
 
-fn bt(ui: &mut Ui, m: &mut Model) {
+fn bt(ui: &mut Ui, m: &Model) {
     ui.header("Bluetooth", Some(("\u{f0450}", Act::BtScan)));
     let (x, w) = (ui.x, ui.w);
     let on = m.bt.as_ref().map(|b| b.powered).unwrap_or(false);
     ui.toggle("Bluetooth", "\u{f00af}", on, Act::BtToggle);
     if on {
-        let devs = m.bt_devs.clone();
+        let devs = &m.bt_devs;
         if devs.is_empty() {
             ui.note(if m.bt_scanning { "Scanning for devices…" } else { "No devices. Press refresh to scan." });
         }
@@ -301,13 +300,13 @@ fn bt(ui: &mut Ui, m: &mut Model) {
     ui.y = y + 44.0;
 }
 
-fn audio(ui: &mut Ui, m: &mut Model) {
+fn audio(ui: &mut Ui, m: &Model) {
     ui.header("Sound", Some(("\u{f0493}", Act::Exec(vec!["pavucontrol".into()]))));
     ui.label("Output");
     let v = m.vol.unwrap_or(crate::services::Volume { level: 0.0, muted: false });
     ui.slider(vol_glyph(v.level, v.muted), Act::MuteOut, v.level, 1.0, Slider::Volume, &if v.muted { "Muted".into() } else { format!("{}%", (v.level * 100.0).round() as i32) });
     if m.sinks.len() > 1 {
-        for d in m.sinks.clone() {
+        for d in &m.sinks {
             ui.row("\u{f04c3}", &d.label, "", if d.default { "\u{f012c}" } else { "" }, d.default, Act::Sink(d.name.clone()));
         }
     }
@@ -315,13 +314,13 @@ fn audio(ui: &mut Ui, m: &mut Model) {
     let mic = m.mic.unwrap_or(crate::services::Volume { level: 0.0, muted: false });
     ui.slider(if mic.muted { "\u{f036d}" } else { "\u{f036c}" }, Act::MuteIn, mic.level, 1.0, Slider::Mic, &if mic.muted { "Muted".into() } else { format!("{}%", (mic.level * 100.0).round() as i32) });
     if m.sources.len() > 1 {
-        for d in m.sources.clone() {
+        for d in &m.sources {
             ui.row("\u{f036c}", &d.label, "", if d.default { "\u{f012c}" } else { "" }, d.default, Act::Source(d.name.clone()));
         }
     }
     if !m.streams.is_empty() {
         ui.label("Applications");
-        for s in m.streams.clone() {
+        for s in &m.streams {
             let th = ui.th;
             let ts = ui.txt(ui.size - 4.0, 700);
             let title = if s.media.is_empty() || s.media == "Playback" { s.app.clone() } else { format!("{}  ·  {}", s.app, s.media) };
@@ -334,7 +333,7 @@ fn audio(ui: &mut Ui, m: &mut Model) {
     }
 }
 
-fn power(ui: &mut Ui, m: &mut Model) {
+fn power(ui: &mut Ui, m: &Model) {
     ui.header("Power", None);
     let (x, w) = (ui.x, ui.w);
     let items: [(&str, &str, &'static str); 5] = [
@@ -360,7 +359,7 @@ fn power(ui: &mut Ui, m: &mut Model) {
     ui.note("Log out, restart and shut down ask for a second click.");
 }
 
-fn calendar(ui: &mut Ui, m: &mut Model) {
+fn calendar(ui: &mut Ui, m: &Model) {
     let today = Local::now().date_naive();
     let mut y0 = today.year();
     let mut mo = today.month() as i32 + m.cal_shift;
@@ -415,7 +414,7 @@ fn calendar(ui: &mut Ui, m: &mut Model) {
     }
 }
 
-fn notifications(ui: &mut Ui, m: &mut Model) {
+fn notifications(ui: &mut Ui, m: &Model) {
     ui.header("Notifications", Some(("\u{f0b89}", Act::NotifClear)));
     ui.toggle("Do not disturb", "\u{f009b}", m.dnd, Act::Dnd);
     if m.notifs.is_empty() {
@@ -423,7 +422,7 @@ fn notifications(ui: &mut Ui, m: &mut Model) {
         return;
     }
     let th = ui.th;
-    for n in m.notifs.clone().iter().rev().take(10) {
+    for n in m.notifs.iter().rev().take(10) {
         let (x, w) = (ui.x, ui.w);
         let y = ui.y;
         let body_lines = if n.body.is_empty() { 0.0 } else { 1.0 };
@@ -455,7 +454,7 @@ fn notifications(ui: &mut Ui, m: &mut Model) {
     }
 }
 
-fn clipboard(ui: &mut Ui, m: &mut Model) {
+fn clipboard(ui: &mut Ui, m: &Model) {
     ui.header("Clipboard", Some(("\u{f0b89}", Act::ClipClear)));
     let th = ui.th;
     let (x, w) = (ui.x, ui.w);
@@ -470,12 +469,12 @@ fn clipboard(ui: &mut Ui, m: &mut Model) {
     }
     ui.y = y + 46.0;
     let q = m.clip_query.to_lowercase();
-    let items: Vec<crate::clip::Item> = m.clip.iter().filter(|i| q.is_empty() || i.text.to_lowercase().contains(&q)).take(12).cloned().collect();
+    let items: Vec<&crate::clip::Item> = m.clip.iter().filter(|i| q.is_empty() || i.text.to_lowercase().contains(&q)).take(12).collect();
     if items.is_empty() {
         ui.note(if m.clip.is_empty() { "Clipboard history is empty." } else { "Nothing found." });
         return;
     }
-    for crate::clip::Item { id, text, image } in items {
+    for &crate::clip::Item { id, ref text, ref image } in items {
         let start = ui.y;
         if image.is_some() {
             let h = 60.0;
@@ -492,10 +491,10 @@ fn clipboard(ui: &mut Ui, m: &mut Model) {
             let ts = ui.txt(ui.size - 3.0, 600);
             ui.text("Image", &ts, x + 86.0, start + h / 2.0 - 8.0, th.fg);
             let ss = ui.txt(ui.size - 5.0, 400);
-            ui.text(&text, &ss, x + 86.0, start + h / 2.0 + 9.0, th.muted);
+            ui.text(text, &ss, x + 86.0, start + h / 2.0 + 9.0, th.muted);
             ui.y = start + h + 2.0;
         } else {
-            ui.row("\u{f0192}", &text, "", "    ", false, Act::ClipCopy(id));
+            ui.row("\u{f0192}", text, "", "    ", false, Act::ClipCopy(id));
         }
         let rh = ui.y - start - 2.0;
         let hot = ui.hit(IRect::new((x + w - 36.0) as i32, (start + rh / 2.0 - 14.0) as i32, 28, 28), Act::ClipDelete(id));
@@ -503,7 +502,7 @@ fn clipboard(ui: &mut Ui, m: &mut Model) {
     }
 }
 
-fn record(ui: &mut Ui, m: &mut Model) {
+fn record(ui: &mut Ui, m: &Model) {
     ui.header("Screen recording", Some(("\u{f024b}", Act::Exec(vec!["xdg-open".into(), format!("{}/Videos", std::env::var("HOME").unwrap_or_default())]))));
     let th = ui.th;
     let (x, w) = (ui.x, ui.w);
@@ -524,7 +523,7 @@ fn record(ui: &mut Ui, m: &mut Model) {
         ui.toggle("System audio", "\u{f057e}", m.rec_sys, Act::RecSys);
         ui.toggle("Microphone", "\u{f036c}", m.rec_mic, Act::RecMic);
         if m.rec_mic && m.sources.len() > 1 {
-            for d in m.sources.clone() {
+            for d in &m.sources {
                 let on = if m.rec_mic_dev.is_empty() { d.default } else { m.rec_mic_dev == d.name };
                 ui.row("\u{f036c}", &d.label, "", if on { "\u{f012c}" } else { "" }, on, Act::RecMicDev(d.name.clone()));
             }
@@ -543,7 +542,7 @@ fn record(ui: &mut Ui, m: &mut Model) {
     }
 }
 
-fn settings(ui: &mut Ui, m: &mut Model) {
+fn settings(ui: &mut Ui, m: &Model) {
     ui.header("Settings", None);
     let (x, w) = (ui.x, ui.w);
     ui.label("World");
@@ -606,15 +605,16 @@ fn dur(secs: i64) -> String {
     if m >= 60 { format!("{}h {:02}m", m / 60, m % 60) } else { format!("{m} min") }
 }
 
-fn battery(ui: &mut Ui, m: &mut Model) {
+fn battery(ui: &mut Ui, m: &Model) {
     ui.header("Battery", Some(("\u{f0425}", Act::Page("power"))));
     let th = ui.th;
     let (x, w) = (ui.x, ui.w);
-    let Some(b) = m.battery.clone() else {
+    let Some(b) = &m.battery else {
         ui.note("No battery found.");
         return;
     };
-    let d = m.batdet.clone().unwrap_or_default();
+    let none = crate::model::BatDetails::default();
+    let d = m.batdet.as_ref().unwrap_or(&none);
     let y = ui.y;
     let big = 30.0;
     let pct = format!("{}%", b.pct);
@@ -691,7 +691,7 @@ fn battery(ui: &mut Ui, m: &mut Model) {
     }
 }
 
-fn wall_card(ui: &mut Ui, m: &mut Model) {
+fn wall_card(ui: &mut Ui, m: &Model) {
     let th = ui.th;
     let (x, w) = (ui.x, ui.w);
     let y = ui.y;

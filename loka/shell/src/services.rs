@@ -56,6 +56,7 @@ pub enum Msg {
     Clip(Vec<crate::clip::Item>),
     BatDetails(crate::model::BatDetails),
     Wall(String, bool, String),
+    WallItems(crate::theme::WorldId, Vec<crate::walls::Item>),
     Resumed,
 }
 

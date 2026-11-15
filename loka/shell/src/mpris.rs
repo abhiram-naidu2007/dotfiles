@@ -21,14 +21,11 @@ fn player<'a>(conn: &Connection, bus: &str) -> zbus::Result<Proxy<'a>> {
 }
 
 fn s(v: Option<&OwnedValue>) -> String {
-    let Some(v) = v.and_then(|v| v.try_clone().ok()) else { return String::new() };
-    if let Ok(x) = String::try_from(v.try_clone().unwrap_or_else(|_| OwnedValue::from(0u8))) {
-        return x;
+    let Some(v) = v else { return String::new() };
+    if let Ok(x) = <&str>::try_from(v) {
+        return x.to_owned();
     }
-    if let Ok(list) = <Vec<String>>::try_from(v) {
-        return list.join(", ");
-    }
-    String::new()
+    v.try_clone().ok().and_then(|v| <Vec<String>>::try_from(v).ok()).map(|l| l.join(", ")).unwrap_or_default()
 }
 
 fn read(conn: &Connection, bus: &str) -> Option<Media> {
@@ -106,7 +103,7 @@ fn run(w: &Waker) -> zbus::Result<()> {
     let mut last = pick(&conn);
     w.send(Msg::Media(last.clone()));
     loop {
-        if rx.recv_timeout(Duration::from_secs(5)).is_ok() {
+        if rx.recv_timeout(Duration::from_secs(30)).is_ok() {
             std::thread::sleep(Duration::from_millis(80));
             while rx.try_recv().is_ok() {}
         }

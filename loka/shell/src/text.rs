@@ -6,9 +6,9 @@ use tiny_skia::Pixmap;
 
 use crate::canvas::{self, Rgba};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TextStyle {
-    pub family: String,
+    pub family: &'static str,
     pub size_tenths: u32,
     pub weight: u16,
     pub italic: bool,
@@ -17,8 +17,8 @@ pub struct TextStyle {
 }
 
 impl TextStyle {
-    pub fn new(family: &str, size: f32, weight: u16) -> Self {
-        Self { family: family.to_owned(), size_tenths: (size * 10.0).round() as u32, weight, italic: false, tracking_cpx: 0, tnum: false }
+    pub fn new(family: &'static str, size: f32, weight: u16) -> Self {
+        Self { family, size_tenths: (size * 10.0).round() as u32, weight, italic: false, tracking_cpx: 0, tnum: false }
     }
 
     pub fn tracking(mut self, px: f32) -> Self {
@@ -41,16 +41,16 @@ impl TextStyle {
     }
 }
 
-pub struct Shaped {
+struct Shaped {
     buf: Buffer,
-    pub width: f32,
-    pub height: f32,
+    width: f32,
+    height: f32,
 }
 
 pub struct Fonts {
     sys: FontSystem,
     cache: SwashCache,
-    shaped: HashMap<(String, TextStyle), Shaped>,
+    shaped: HashMap<TextStyle, HashMap<String, Shaped>>,
 }
 
 fn font_files() -> Vec<PathBuf> {
@@ -86,35 +86,7 @@ impl Fonts {
     }
 
     fn shape(&mut self, text: &str, st: &TextStyle) -> &Shaped {
-        let key = (text.to_owned(), st.clone());
-        if !self.shaped.contains_key(&key) {
-            if self.shaped.len() > 1024 {
-                self.shaped.clear();
-            }
-            let size = st.size();
-            let mut buf = Buffer::new(&mut self.sys, Metrics::new(size, (size * 1.3).ceil()));
-            let mut features = FontFeatures::new();
-            if st.tnum {
-                features.enable(FeatureTag::new(b"tnum"));
-            }
-            let attrs = Attrs::new()
-                .family(Family::Name(&st.family))
-                .weight(Weight(st.weight))
-                .style(if st.italic { Style::Italic } else { Style::Normal })
-                .letter_spacing(st.tracking_cpx as f32 / 100.0 / size)
-                .font_features(features);
-            buf.set_size(None, None);
-            buf.set_text(text, &attrs, Shaping::Advanced, None);
-            buf.shape_until_scroll(&mut self.sys, false);
-            let mut width: f32 = 0.0;
-            let mut height: f32 = size * 1.3;
-            for run in buf.layout_runs() {
-                width = width.max(run.line_w);
-                height = run.line_height;
-            }
-            self.shaped.insert(key.clone(), Shaped { buf, width, height });
-        }
-        &self.shaped[&key]
+        shape(&mut self.sys, &mut self.shaped, text, st)
     }
 
     pub fn measure(&mut self, text: &str, st: &TextStyle) -> f32 {
@@ -123,10 +95,8 @@ impl Fonts {
 
     #[allow(clippy::too_many_arguments)]
     pub fn draw(&mut self, pm: &mut Pixmap, text: &str, st: &TextStyle, x: f32, center_y: f32, color: Rgba, max_w: Option<f32>) -> f32 {
-        let key = (text.to_owned(), st.clone());
-        self.shape(text, st);
         let Fonts { sys, cache, shaped } = self;
-        let s = &shaped[&key];
+        let s = shape(sys, shaped, text, st);
         let top = (center_y - s.height / 2.0).round();
         let limit = max_w.map(|m| x + m);
         for run in s.buf.layout_runs() {
@@ -158,20 +128,40 @@ impl Fonts {
         }
         let ell = "…";
         let room = (max_w - self.measure(ell, st)).max(0.0);
-        let key = (text.to_owned(), st.clone());
-        let mut cut = 0usize;
-        if let Some(sh) = self.shaped.get(&key) {
-            for run in sh.buf.layout_runs() {
-                for g in run.glyphs.iter() {
-                    if g.x + g.w <= room {
-                        cut = cut.max(g.end);
-                    }
-                }
-            }
-        }
+        let cut = self.shape(text, st).buf.layout_runs().flat_map(|r| r.glyphs.iter()).filter(|g| g.x + g.w <= room).map(|g| g.end).max().unwrap_or(0);
         let mut t = text.get(..cut).unwrap_or("").trim_end().to_owned();
         t.push_str(ell);
         self.draw(pm, &t, st, x, center_y, color, None)
     }
 }
 
+fn shape<'a>(sys: &mut FontSystem, shaped: &'a mut HashMap<TextStyle, HashMap<String, Shaped>>, text: &str, st: &TextStyle) -> &'a Shaped {
+    let by_text = shaped.entry(*st).or_default();
+    if !by_text.contains_key(text) {
+        if by_text.len() > 256 {
+            by_text.clear();
+        }
+        let size = st.size();
+        let mut buf = Buffer::new(sys, Metrics::new(size, (size * 1.3).ceil()));
+        let mut features = FontFeatures::new();
+        if st.tnum {
+            features.enable(FeatureTag::new(b"tnum"));
+        }
+        let attrs = Attrs::new()
+            .family(Family::Name(st.family))
+            .weight(Weight(st.weight))
+            .style(if st.italic { Style::Italic } else { Style::Normal })
+            .letter_spacing(st.tracking_cpx as f32 / 100.0 / size)
+            .font_features(features);
+        buf.set_size(None, None);
+        buf.set_text(text, &attrs, Shaping::Advanced, None);
+        buf.shape_until_scroll(sys, false);
+        let (mut width, mut height) = (0.0f32, size * 1.3);
+        for run in buf.layout_runs() {
+            width = width.max(run.line_w);
+            height = run.line_height;
+        }
+        by_text.insert(text.to_owned(), Shaped { buf, width, height });
+    }
+    &by_text[text]
+}

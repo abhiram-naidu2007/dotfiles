@@ -288,8 +288,8 @@ impl App {
             0xff0d | 0xff8d => self.walls_act(WAct::Apply, now),
             0xff51 | 0x68 => self.walls.step(-1, now),
             0xff53 | 0x6c => self.walls.step(1, now),
-            0xff52 | 0x6b | 0xfe20 => self.walls.world_step(-1, now),
-            0xff54 | 0x6a | 0xff09 => self.walls.world_step(1, now),
+            0xff52 | 0x6b | 0xfe20 => self.walls.world_step(-1),
+            0xff54 | 0x6a | 0xff09 => self.walls.world_step(1),
             _ => {}
         }
     }
@@ -608,7 +608,9 @@ impl App {
     }
 
     fn toggle_page(&mut self, page: &'static str, now: Instant) {
-        if page == "worldwalls" {
+        if page == "worldwalls" && self.walls.open {
+            self.close_walls();
+        } else if page == "worldwalls" {
             self.open_walls(now);
         } else if self.isl.expanded && self.isl.page == page {
             self.isl.close(now);
@@ -640,7 +642,12 @@ impl App {
             return self.toggle_page(page, now);
         }
         match cmd {
-            "close" => self.isl.close(now),
+            "close" => {
+                self.isl.close(now);
+                if self.walls.open {
+                    self.close_walls();
+                }
+            }
             "dnd" => self.act(Act::Dnd, now),
             "recordToggle" => self.act(Act::Record, now),
             "worldNext" => {
@@ -827,6 +834,7 @@ impl App {
                 self.m.clip = c;
             }
             Msg::BatDetails(d) => self.m.batdet = Some(d),
+            Msg::WallItems(world, items) => self.walls.set_items(world, items),
             Msg::Wall(name, video, thumb) => {
                 self.m.wall_name = name;
                 self.m.wall_video = video;
@@ -929,7 +937,7 @@ impl App {
         if self.isl.needs_frame(now) {
             self.isl.last_content_ms = 0.0;
             let ta = Instant::now();
-            let d = self.isl.render(&mut self.isl_s.pixmap, &mut self.fonts, &mut self.m, now);
+            let d = self.isl.render(&mut self.isl_s.pixmap, &mut self.fonts, &self.m, now);
             let tb = Instant::now();
             self.disp.present(&mut self.isl_s, d)?;
             self.disp.set_input_region(&self.isl_s, &self.isl.input_rects(now))?;
@@ -1038,6 +1046,7 @@ pub fn run() -> x11::Result<()> {
         bright: services::brightness(),
         ..Default::default()
     };
+    let walls = crate::walls::Walls::new(hub.waker());
     let mut app = App {
         disp,
         fonts: text::Fonts::new(),
@@ -1058,7 +1067,7 @@ pub fn run() -> x11::Result<()> {
         frames: 0,
         stats_log: std::env::var_os("LOKA_STATS").is_some(),
         times: Vec::new(),
-        walls: crate::walls::Walls::new(),
+        walls,
         walls_s: None,
         menu: None,
         menu_x: 0,
@@ -1115,7 +1124,7 @@ pub fn run() -> x11::Result<()> {
         }
         if warm_at.is_some_and(|t| now >= t) && !app.isl.expanded {
             warm_at = None;
-            app.isl.warm(&mut app.fonts, &mut app.m, now);
+            app.isl.warm(&mut app.fonts, &app.m, now);
         }
         let clock = app.m.clock.clone();
         app.isl.tick(now, &clock);

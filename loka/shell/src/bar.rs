@@ -156,7 +156,6 @@ impl Part {
 }
 
 struct Spec {
-    active: bool,
     fill: Rgba,
     border: f32,
     pad: f32,
@@ -169,19 +168,19 @@ pub struct Bar {
     theme: Theme,
     col: Colors,
     width: f32,
-    pub workspaces: Vec<i32>,
+    workspaces: Vec<i32>,
     pub focused: i32,
     ws_w: HashMap<i32, Tween>,
-    pub stats: [i32; 3],
-    pub title: String,
-    pub class: String,
-    pub hidden: bool,
+    stats: [i32; 3],
+    title: String,
+    class: String,
+    hidden: bool,
     battery: Option<(i32, bool)>,
-    pub wifi: Option<crate::services::Wifi>,
-    pub bt: Option<crate::services::Bt>,
-    pub vol: Option<crate::services::Volume>,
-    pub tray: Vec<crate::tray::TrayItem>,
-    pub open_page: Option<&'static str>,
+    wifi: Option<crate::services::Wifi>,
+    bt: Option<crate::services::Bt>,
+    vol: Option<crate::services::Volume>,
+    tray: Vec<crate::tray::TrayItem>,
+    open_page: Option<&'static str>,
     rec: Option<(i64, bool)>,
     hover: Option<Hit>,
     hits: Vec<(IRect, Hit)>,
@@ -278,7 +277,7 @@ impl Bar {
         }
     }
 
-    pub fn set_service<T: PartialEq>(slot: &mut Option<T>, v: T, dirty: &mut bool) {
+    fn set_service<T: PartialEq>(slot: &mut Option<T>, v: T, dirty: &mut bool) {
         if slot.as_ref() != Some(&v) {
             *slot = Some(v);
             *dirty = true;
@@ -301,7 +300,7 @@ impl Bar {
         }
     }
 
-    pub fn set_battery(&mut self, b: Option<(i32, bool)>) {
+    fn set_battery(&mut self, b: Option<(i32, bool)>) {
         if b != self.battery {
             self.battery = b;
             self.dirty = true;
@@ -325,7 +324,7 @@ impl Bar {
                 Part::Glyph(if paused { "\u{f03e4}" } else { "\u{f044a}" }, 13.0, c.crit),
                 Part::Text(t, self.txt(13.0, wd.text_weight).tnum(true), c.text1, 0.0),
             ];
-            out.push(Spec { active: false, fill: c.bg, border: wd.border, pad: self.pad(), spacing: 7.0, parts, hits: vec![(Hit::Rec, None)] });
+            out.push(Spec { fill: c.bg, border: wd.border, pad: self.pad(), spacing: 7.0, parts, hits: vec![(Hit::Rec, None)] });
         }
         let hidden = ["nm-applet", "blueman", "networkmanager", "xfce4-clipman"];
         let mut tparts = Vec::new();
@@ -341,7 +340,7 @@ impl Bar {
             }
         }
         if !tparts.is_empty() {
-            out.push(Spec { active: false, fill: c.bg, border: wd.border, pad: self.pad(), spacing: 10.0, parts: tparts, hits: thits });
+            out.push(Spec { fill: c.bg, border: wd.border, pad: self.pad(), spacing: 10.0, parts: tparts, hits: thits });
         }
         if self.stats[0] >= 0 {
             let glyphs = wd.labels_are_glyphs();
@@ -357,17 +356,17 @@ impl Bar {
                 if glyphs {
                     parts.push(Part::Glyph(wd.labels[i], 14.0, lc));
                 } else {
-                    parts.push(Part::Text(wd.labels[i].to_owned(), lst.clone(), lc, 0.0));
+                    parts.push(Part::Text(wd.labels[i].to_owned(), lst, lc, 0.0));
                 }
-                parts.push(Part::Text(v.to_string(), vst.clone(), if v >= 90 { c.crit } else { c.text1 }, 20.0));
+                parts.push(Part::Text(v.to_string(), vst, if v >= 90 { c.crit } else { c.text1 }, 20.0));
             }
-            out.push(Spec { active: false, fill: c.bg, border: wd.border, pad: 12.0, spacing: 0.0, parts: interleave(parts), hits: vec![(Hit::Stats, None)] });
+            out.push(Spec { fill: c.bg, border: wd.border, pad: 12.0, spacing: 0.0, parts: interleave(parts), hits: vec![(Hit::Stats, None)] });
         }
         if let Some(wf) = &self.wifi {
             let g = if !wf.enabled { "\u{f092e}" } else if wf.ssid.is_empty() { "\u{f092b}" }
                 else if wf.strength > 66 { "\u{f0928}" } else if wf.strength > 33 { "\u{f0925}" } else { "\u{f091f}" };
             let gc = if !wf.enabled || wf.ssid.is_empty() { c.crit } else { c.text1 };
-            out.push(Spec { active: false, fill: c.bg, border: wd.border, pad: self.pad(), spacing: 8.0, parts: vec![Part::Glyph(g, 15.0, gc)], hits: vec![(Hit::Wifi, None)] });
+            out.push(Spec { fill: c.bg, border: wd.border, pad: self.pad(), spacing: 8.0, parts: vec![Part::Glyph(g, 15.0, gc)], hits: vec![(Hit::Wifi, None)] });
         }
         if let Some(b) = &self.bt {
             let conn = !b.connected.is_empty();
@@ -376,7 +375,7 @@ impl Bar {
             if b.battery > 0 {
                 parts.push(Part::Text(format!("{}%", b.battery), self.txt(12.0, wd.text_weight).tnum(true), c.text2, 0.0));
             }
-            out.push(Spec { active: false, fill: c.bg, border: wd.border, pad: self.pad(), spacing: 8.0, parts, hits: vec![(Hit::Bluetooth, None)] });
+            out.push(Spec { fill: c.bg, border: wd.border, pad: self.pad(), spacing: 8.0, parts, hits: vec![(Hit::Bluetooth, None)] });
         }
         if let Some(v) = self.vol {
             let g = if v.muted { "\u{f075f}" } else if v.level > 0.66 { "\u{f057e}" } else if v.level > 0.33 { "\u{f0580}" } else { "\u{f057f}" };
@@ -385,7 +384,7 @@ impl Bar {
                 Part::Glyph(g, 15.0, c.text2),
                 Part::Text(t, self.txt(13.0, wd.text_weight).tnum(true), if v.muted { c.crit } else { c.text1 }, 28.0),
             ];
-            out.push(Spec { active: false, fill: c.bg, border: wd.border, pad: self.pad(), spacing: 7.0, parts, hits: vec![(Hit::Volume, None)] });
+            out.push(Spec { fill: c.bg, border: wd.border, pad: self.pad(), spacing: 7.0, parts, hits: vec![(Hit::Volume, None)] });
         }
         if let Some((pct, charging)) = self.battery {
             let hp = if charging { c.ok } else if pct <= 20 { c.crit } else if pct <= 50 { c.warn } else { c.ok };
@@ -401,9 +400,9 @@ impl Bar {
             });
             let tc = if pct <= 20 && !charging { c.crit } else { c.text1 };
             parts.push(Part::Text(format!("{pct}%{}", if charging { " +" } else { "" }), self.txt(13.0, wd.text_weight).tnum(true), tc, 0.0));
-            out.push(Spec { active: false, fill: c.bg, border: wd.border, pad: self.pad(), spacing: 8.0, parts, hits: vec![(Hit::Battery, None)] });
+            out.push(Spec { fill: c.bg, border: wd.border, pad: self.pad(), spacing: 8.0, parts, hits: vec![(Hit::Battery, None)] });
         }
-        out.push(Spec { active: false, fill: c.on, border: 0.0, pad: 9.0, spacing: 0.0, parts: vec![Part::Glyph("\u{f0425}", 15.0, c.on_text)], hits: vec![(Hit::Power, None)] });
+        out.push(Spec { fill: c.on, border: 0.0, pad: 9.0, spacing: 0.0, parts: vec![Part::Glyph("\u{f0425}", 15.0, c.on_text)], hits: vec![(Hit::Power, None)] });
         out
     }
 
@@ -514,17 +513,17 @@ impl Bar {
         self.pills.push(IRect::new(x as i32, TOP as i32, lw.ceil() as i32, h as i32));
         x += lw + GAP;
 
-        let ws = self.workspaces.clone();
-        let widths: Vec<f32> = ws
+        let widths: Vec<f32> = self
+            .workspaces
             .iter()
             .map(|id| self.ws_w.get(id).map(|t| t.value(now)).unwrap_or_else(|| self.ws_target(*id)))
             .collect();
-        let inner: f32 = widths.iter().sum::<f32>() + 9.0 * (ws.len().saturating_sub(1)) as f32;
+        let inner: f32 = widths.iter().sum::<f32>() + 9.0 * (self.workspaces.len().saturating_sub(1)) as f32;
         let ww = inner + 26.0 + self.pad_extra();
         let hot = matches!(self.hover, Some(Hit::Workspace(_)));
         self.pill(pm, x, ww, self.col.bg, self.theme.world.border, hot);
         let mut dx = x + (ww - inner) / 2.0;
-        for (id, w) in ws.iter().zip(widths.iter()) {
+        for (id, w) in self.workspaces.iter().zip(widths.iter()) {
             let here = *id == self.focused;
             let hovered = self.hover == Some(Hit::Workspace(*id));
             let opacity = if here { 1.0 } else if hovered { 0.85 } else { 0.5 };
@@ -561,7 +560,7 @@ impl Bar {
         if !shown.is_empty() && self.width / 2.0 - ISLAND_HALF - GAP - x > 120.0 {
             let gst = TextStyle::new(ICON_FONT, 14.0, 400);
             let glyph = "\u{f05af}";
-            let icon = if self.class.is_empty() { None } else { icons.for_class(&self.class, 16).cloned() };
+            let icon = if self.class.is_empty() { None } else { icons.for_class(&self.class, 16) };
             let gw = if icon.is_some() { 16.0 } else { fonts.measure(glyph, &gst) };
             let tst = TextStyle::new(self.theme.world.text, 13.0, 500).tracking(self.theme.world.tracking);
             let cap = (self.width / 2.0 - ISLAND_HALF - GAP - x - 34.0 - gw).min(360.0);
@@ -570,7 +569,7 @@ impl Bar {
             let wd = &self.theme.world;
             let tr = canvas::skew_about(wd.skew, TOP + h / 2.0);
             canvas::fill_round(pm, x, TOP, bw, h, wd.radius.min(h / 2.0), self.col.bg.alpha(0.78), tr);
-            if let Some(ic) = &icon {
+            if let Some(ic) = icon {
                 pm.draw_pixmap((x + 13.0) as i32, (cy - 8.0) as i32, ic.as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
             } else {
                 fonts.draw(pm, glyph, &gst, x + 13.0, cy, self.col.on2, None);
@@ -592,7 +591,6 @@ impl Bar {
                 _ => "",
             });
             if page.is_some() && page == open && !page.unwrap_or("").is_empty() {
-                sp.active = true;
                 sp.fill = on;
                 sp.border = 0.0;
                 for p in sp.parts.iter_mut() {
