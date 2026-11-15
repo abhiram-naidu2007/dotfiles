@@ -10,7 +10,7 @@ const float COLOUR = 0.18;
 const float SPREAD = 0.14;
 const float FIBRE = 0.014;
 const float SAT_INK = 0.35;
-const float GAP = 0.32;
+const float GAP = 0.48;
 const float TEXT_ON = 0.72;
 
 const ivec2 RING[8] = ivec2[8](
@@ -60,7 +60,7 @@ vec4 window_shader() {
         sum += t;
     }
     float d = hi - l;
-    if (hi > TEXT_ON && hi - sum / 8.0 < 0.5 * d + 0.02 && d > 0.02 && d < GAP)
+    if (hi > TEXT_ON && hi - sum / 8.0 < 0.5 * d + 0.05 && d > 0.02 && d < GAP)
         l = hi - mix(d, GAP, clamp((d - 0.02) / 0.06, 0.0, 1.0));
 
     float n = min(min(tone_at(p + ivec2(1, 0)), tone_at(p - ivec2(1, 0))),
