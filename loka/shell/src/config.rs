@@ -22,8 +22,16 @@ impl Default for Config {
     }
 }
 
+pub fn home() -> PathBuf {
+    PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+}
+
+pub fn assets() -> PathBuf {
+    home().join("dotfiles/loka")
+}
+
 fn path() -> PathBuf {
-    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config/loka/shell.json")
+    home().join(".config/loka/shell.json")
 }
 
 impl Config {

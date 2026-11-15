@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::anim::{Ease, Tween};
 use crate::canvas::{self, IRect, Rgba};
+use crate::config::home;
 use crate::text::{Fonts, TextStyle};
 use crate::theme::{Island, Theme, World, WorldId};
 
@@ -64,10 +64,6 @@ fn title(w: WorldId) -> &'static str {
     }
 }
 
-fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
-}
-
 fn island_of(w: WorldId) -> Island {
     let mut t = Theme::load();
     t.world = World::get(w);
@@ -97,7 +93,7 @@ impl Walls {
         self.fade.set(1.0, now, Duration::from_millis(200), Ease::OutCubic);
         self.load(world, now);
         if self.outline.is_none() {
-            self.outline = crate::icons::load_scaled(&home().join("dotfiles/loka/panacea/assets/card-outline.png"), DECODE_W);
+            self.outline = crate::icons::load_scaled(&crate::config::assets().join("card-outline.png"), DECODE_W);
         }
     }
 
@@ -149,15 +145,6 @@ impl Walls {
         let i = ORDER.iter().position(|w| *w == self.world).unwrap_or(0) as i32;
         let w = ORDER[((i + d).rem_euclid(4)) as usize];
         self.load(w, now);
-    }
-
-    pub fn apply_cmd(&self) -> Option<String> {
-        let it = self.items.get(self.index)?;
-        let w = wname(self.world);
-        Some(format!(
-            "mkdir -p \"$HOME/.config/loka\" && printf '%s\\n' {w} > \"$HOME/.config/loka/world\"; exec \"$HOME/.local/bin/rice\" world {w} '{}'",
-            it.path.replace('\'', "'\\''")
-        ))
     }
 
     fn thumb(&mut self, i: usize) -> Option<&Pixmap> {
@@ -268,7 +255,7 @@ impl Walls {
         self.hits.iter().rev().find(|(r, _)| r.contains(x, y)).map(|(_, a)| *a)
     }
 
-    pub fn act(&mut self, a: WAct, now: Instant) -> Option<String> {
+    pub fn act(&mut self, a: WAct, now: Instant) -> Option<(&'static str, String)> {
         match a {
             WAct::Close => {
                 self.hide();
@@ -280,9 +267,9 @@ impl Walls {
                 None
             }
             WAct::Apply => {
-                let c = self.apply_cmd();
+                let pick = self.items.get(self.index).map(|it| (wname(self.world), it.path.clone()));
                 self.hide();
-                c
+                pick
             }
             WAct::World(wd) => {
                 self.load(wd, now);

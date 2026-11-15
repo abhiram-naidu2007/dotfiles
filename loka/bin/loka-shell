@@ -1,4 +1,0 @@
-#!/bin/bash
-unset I3SOCK
-sock=$(i3 --get-socketpath 2>/dev/null) && export I3SOCK="$sock"
-exec "$HOME/.local/bin/loka" "$@"

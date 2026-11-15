@@ -7,30 +7,28 @@ use x11rb::protocol::Event;
 
 use crate::island::Ev;
 use crate::ui::{Act, Slider};
-use crate::{audio, bar, i3, icons, ipc, island, model, mpris, notify, services, stats, text, theme, watch, x11};
+use crate::config::{assets, home};
+use crate::{audio, bar, clip, i3, icons, ipc, island, model, mpris, notify, services, stats, text, theme, watch, wifi, x11};
 
 const FRAME: Duration = Duration::from_micros(6944);
 const STATS_EVERY: Duration = Duration::from_secs(3);
 
-fn home() -> std::path::PathBuf {
-    std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+const WORLDS: [&str; 4] = ["meridian", "sakuga", "katha", "toon"];
+const IDLE: [&str; 9] = ["xset", "s", "600", "600", "+dpms", "dpms", "0", "0", "900"];
+
+fn script(name: &str) -> String {
+    assets().join("scripts").join(name).to_string_lossy().into_owned()
 }
 
-fn scripts() -> std::path::PathBuf {
-    home().join("dotfiles/loka/panacea/scripts")
+fn rice(args: &[&str]) {
+    let bin = home().join(".local/bin/rice").to_string_lossy().into_owned();
+    spawn(&[&[bin.as_str()], args].concat());
 }
 
 fn spawn(argv: &[&str]) {
-    if argv.is_empty() {
-        return;
-    }
     let _ = Command::new(argv[0]).args(&argv[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|mut c| {
         std::thread::spawn(move || c.wait());
     });
-}
-
-fn sh_bg(cmd: String) {
-    spawn(&["sh", "-c", &cmd]);
 }
 
 fn run_out(argv: &[&str]) -> String {
@@ -41,8 +39,7 @@ fn sound(name: &str) {
     if !crate::config::SOUNDS.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
-    let p = home().join(format!("dotfiles/loka/panacea/sounds/{name}.wav")).to_string_lossy().into_owned();
-    spawn(&["pw-play", &p]);
+    spawn(&["pw-play", &assets().join(format!("sounds/{name}.wav")).to_string_lossy()]);
 }
 
 fn rec_parse(out: &str) -> Option<model::Rec> {
@@ -93,11 +90,15 @@ impl App {
     }
 
     fn sync_i3(&mut self, now: Instant) {
-        let ws = self.i3.workspaces();
-        let focused = ws.iter().find(|w| w.focused).map(|w| w.num).unwrap_or(-1);
-        self.bar.set_workspaces(ws.iter().map(|w| w.num).collect(), focused, now);
+        let (ws, focused) = self.i3.workspaces();
+        self.bar.set_workspaces(ws, focused, now);
         let f = self.i3.focus();
+        self.set_focus(&f, now);
+    }
+
+    fn set_focus(&mut self, f: &i3::Focus, now: Instant) {
         self.bar.set_focus(&f.title, &f.class, f.fullscreen);
+        self.isl.set_hidden(f.fullscreen, now);
     }
 
     fn tick_clock(&mut self) {
@@ -125,10 +126,6 @@ impl App {
             }
             "record" => self.rec_status(),
             "battery" => services::battery_details(self.waker()),
-            "worldwalls" => {
-                self.open_walls(now);
-                return;
-            }
             _ => {}
         }
         if page == "main" {
@@ -138,17 +135,7 @@ impl App {
     }
 
     fn toast(&mut self, glyph: &str, label: &str, title: &str, ring: Option<f32>, ms: u64, now: Instant) {
-        self.isl.show(island::Toast {
-            glyph: glyph.into(),
-            label: label.into(),
-            title: title.into(),
-            body: String::new(),
-            ring,
-            notif: None,
-            action: None,
-            default_action: false,
-            until: now + Duration::from_millis(ms),
-        }, now);
+        self.isl.show(island::Toast::plain(glyph, label, title, ring, now + Duration::from_millis(ms)), now);
     }
 
     fn follow_launch(&mut self, con_id: i64, now: Instant) {
@@ -219,10 +206,6 @@ impl App {
             self.disp.destroy(surf);
             self.disp.ungrab_pointer();
             self.pointer = false;
-            if self.pointer {
-                self.disp.ungrab_pointer();
-                self.pointer = false;
-            }
             self.disp.ungrab_keyboard();
             self.grabbed = false;
         }
@@ -290,8 +273,8 @@ impl App {
     }
 
     fn walls_act(&mut self, a: crate::walls::WAct, now: Instant) {
-        if let Some(cmd) = self.walls.act(a, now) {
-            sh_bg(cmd);
+        if let Some((world, path)) = self.walls.act(a, now) {
+            rice(&["world", world, &path]);
         }
         if !self.walls.open {
             self.close_walls();
@@ -314,65 +297,31 @@ impl App {
     fn wifi_scan(&mut self) {
         self.m.wifi_busy = true;
         let w = self.waker();
-        let s = scripts().join("wifi.sh").to_string_lossy().into_owned();
         std::thread::spawn(move || {
-            let parse = |out: String| -> Vec<model::Net> {
-                out.lines()
-                    .filter_map(|l| {
-                        let p: Vec<&str> = l.split('|').collect();
-                        (p.len() >= 5).then(|| model::Net {
-                            connected: p[0] == "yes",
-                            ssid: p[1].to_owned(),
-                            security: p[2].to_owned(),
-                            strength: p[3].parse().unwrap_or(0),
-                            known: p[4] == "yes",
-                        })
-                    })
-                    .collect()
-            };
-            w.send(services::Msg::Nets(parse(run_out(&[&s, "list"]))));
-            let _ = run_out(&[&s, "scan"]);
+            w.send(services::Msg::Nets(wifi::list()));
+            wifi::scan();
             std::thread::sleep(Duration::from_secs(4));
-            w.send(services::Msg::Nets(parse(run_out(&[&s, "list"]))));
+            w.send(services::Msg::Nets(wifi::list()));
         });
     }
 
     fn wifi_connect(&mut self, ssid: String, pw: Option<String>) {
         self.m.wifi_busy = true;
         let w = self.waker();
-        let script = scripts().join("wifi.sh").to_string_lossy().into_owned();
         std::thread::spawn(move || {
-            let mut c = Command::new(&script);
-            c.arg("connect").arg(&ssid);
-            if let Some(p) = pw {
-                c.arg(p);
-            }
-            let ok = c.stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
+            let ok = wifi::connect(&ssid, pw.as_deref());
             w.send(services::Msg::WifiDone(ok, ssid));
         });
     }
 
     fn clip_load(&mut self) {
         let w = self.waker();
-        std::thread::spawn(move || {
-            let shim = home().join("dotfiles/loka/shim/cliphist").to_string_lossy().into_owned();
-            let out = run_out(&[&shim, "list"]);
-            let items = out
-                .lines()
-                .filter_map(|l| l.split_once('\t').map(|(a, b)| (a.to_owned(), b.to_owned())))
-                .take(40)
-                .collect();
-            w.send(services::Msg::Clip(items));
-        });
+        std::thread::spawn(move || w.send(services::Msg::Clip(clip::list())));
     }
 
     fn rec_status(&mut self) {
         let w = self.waker();
-        let script = scripts().join("record.sh").to_string_lossy().into_owned();
-        std::thread::spawn(move || {
-            let out = run_out(&[&script, "status"]);
-            w.send(services::Msg::Rec(rec_parse(&out)));
-        });
+        std::thread::spawn(move || w.send(services::Msg::Rec(rec_parse(&run_out(&[&script("record.sh"), "status"])))));
     }
 
     fn set_coffee(&mut self, on: bool) {
@@ -384,13 +333,13 @@ impl App {
                 .stderr(Stdio::null())
                 .spawn()
                 .ok();
-            sh_bg("xset s off -dpms".into());
+            spawn(&["xset", "s", "off", "-dpms"]);
         } else if !on {
             if let Some(mut c) = self.coffee.take() {
                 let _ = c.kill();
                 let _ = c.wait();
             }
-            sh_bg("xset s 600 600 +dpms dpms 0 0 900".into());
+            spawn(&IDLE);
         }
         self.m.coffee = self.coffee.is_some();
     }
@@ -427,11 +376,10 @@ impl App {
             Act::Close => self.isl.close(now),
             Act::Cmd(c) => {
                 if c == "airplane" {
-                    sh_bg("if rfkill -n -o SOFT list | grep -qv '^blocked$'; then rfkill block all; else rfkill unblock all; fi".into());
+                    spawn(&["sh", "-c", "if rfkill -n -o SOFT list | grep -qv '^blocked$'; then rfkill block all; else rfkill unblock all; fi"]);
                 } else if let Some(wn) = c.strip_prefix("world ") {
-                    spawn(&[&home().join(".local/bin/loka-world").to_string_lossy(), wn]);
+                    rice(&["world", wn]);
                 } else if c == "worldwalls" {
-                    self.isl.close(now);
                     self.open_walls(now);
                 } else {
                     self.i3.command(&c);
@@ -450,17 +398,17 @@ impl App {
             Act::WifiPick(ssid) => {
                 let net = self.m.nets.iter().find(|n| n.ssid == ssid).cloned();
                 match net {
-                    Some(n) if n.connected => spawn(&[&scripts().join("wifi.sh").to_string_lossy(), "disconnect"]),
+                    Some(n) if n.connected => drop(std::thread::spawn(wifi::disconnect)),
                     Some(n) if n.known || n.security == "open" => self.wifi_connect(ssid, None),
-                    Some(n) => {
-                        self.m.pw_for = Some((ssid, n.security));
+                    Some(_) => {
+                        self.m.pw_for = Some(ssid);
                         self.m.pw_text.clear();
                     }
                     None => {}
                 }
             }
             Act::WifiConnectTyped => {
-                if let Some((ssid, _)) = self.m.pw_for.take() {
+                if let Some(ssid) = self.m.pw_for.take() {
                     let pw = std::mem::take(&mut self.m.pw_text);
                     if !pw.is_empty() {
                         self.wifi_connect(ssid, Some(pw));
@@ -468,10 +416,9 @@ impl App {
                 }
             }
             Act::WifiForget(ssid) => {
-                let s = scripts().join("wifi.sh").to_string_lossy().into_owned();
                 let w = self.waker();
                 std::thread::spawn(move || {
-                    let _ = run_out(&[&s, "forget", &ssid]);
+                    wifi::forget(&ssid);
                     w.send(services::Msg::WifiDone(true, String::new()));
                 });
             }
@@ -500,19 +447,15 @@ impl App {
             Act::MuteIn => audio::control(audio::Ctl::MicMute),
             Act::MuteStream(i) => audio::control(audio::Ctl::StreamMute(i)),
             Act::ClipCopy(id) => {
-                let shim = home().join("dotfiles/loka/shim").to_string_lossy().into_owned();
-                let id = id.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
-                sh_bg(format!("printf '%s\\n' {id} | {shim}/cliphist decode | {shim}/wl-copy"));
+                std::thread::spawn(move || clip::copy(id));
                 self.isl.close(now);
             }
             Act::ClipDelete(id) => {
-                let shim = home().join("dotfiles/loka/shim").to_string_lossy().into_owned();
-                let id = id.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
-                let _ = Command::new("sh").arg("-c").arg(format!("printf '%s\\n' {id} | {shim}/cliphist delete")).status();
+                clip::delete(id);
                 self.clip_load();
             }
             Act::ClipClear => {
-                spawn(&[&home().join("dotfiles/loka/shim/cliphist").to_string_lossy(), "wipe"]);
+                clip::wipe();
                 self.m.clip.clear();
             }
             Act::NotifAction(id, key) => {
@@ -534,8 +477,8 @@ impl App {
                 self.m.cfg.dnd = self.m.dnd;
                 self.m.cfg.save();
             }
-            Act::LiveToggle => sh_bg("~/.local/bin/rice live toggle".into()),
-            Act::MoodToggle => sh_bg("~/.local/bin/rice mode next".into()),
+            Act::LiveToggle => rice(&["live", "toggle"]),
+            Act::MoodToggle => rice(&["mode", "next"]),
             Act::Clock24 => {
                 self.m.cfg.clock24 = !self.m.cfg.clock24;
                 self.m.cfg.save();
@@ -571,7 +514,7 @@ impl App {
                     self.m.power_arm.clear();
                     self.isl.close(now);
                     match id {
-                        "lock" => sh_bg("~/dotfiles/lockscreen/lock.sh".into()),
+                        "lock" => spawn(&[&home().join("dotfiles/lockscreen/lock.sh").to_string_lossy()]),
                         "suspend" => spawn(&["systemctl", "suspend"]),
                         "logout" => self.i3.command("exit"),
                         "reboot" => spawn(&["systemctl", "reboot"]),
@@ -615,7 +558,7 @@ impl App {
     }
 
     fn rec_cmd(&mut self, args: Vec<String>) {
-        let script = scripts().join("record.sh").to_string_lossy().into_owned();
+        let script = script("record.sh");
         let w = self.waker();
         std::thread::spawn(move || {
             let _ = Command::new(&script).args(&args).stdout(Stdio::null()).stderr(Stdio::null()).status();
@@ -664,94 +607,57 @@ impl App {
         self.isl.mark();
     }
 
+    fn toggle_page(&mut self, page: &'static str, now: Instant) {
+        if page == "worldwalls" {
+            self.open_walls(now);
+        } else if self.isl.expanded && self.isl.page == page {
+            self.isl.close(now);
+        } else if self.isl.expanded {
+            self.act(Act::Page(page), now);
+        } else {
+            self.open(page, now);
+        }
+    }
+
     fn ipc(&mut self, line: &str, now: Instant) {
-        let mut it = line.split_whitespace();
-        let cmd = it.next().unwrap_or("");
-        let page: Option<&'static str> = match cmd {
-            "controls" | "main" | "settingsAt" => Some("main"),
-            "wifi" => Some("wifi"),
-            "bluetooth" | "bt" => Some("bt"),
-            "audio" => Some("audio"),
-            "notifications" => Some("notif"),
-            "calendar" => Some("cal"),
-            "clipboard" => Some("clip"),
-            "powermenu" | "power" => Some("power"),
-            "settings" => Some("settings"),
-            "battery" => Some("battery"),
-            "record" => Some("record"),
-            _ => None,
+        let (cmd, arg) = line.split_once(' ').unwrap_or((line, ""));
+        let page = match cmd {
+            "controls" => "main",
+            "wifi" => "wifi",
+            "bluetooth" => "bt",
+            "audio" => "audio",
+            "notifications" => "notif",
+            "calendar" => "cal",
+            "clipboard" => "clip",
+            "powermenu" => "power",
+            "settings" => "settings",
+            "battery" => "battery",
+            "record" => "record",
+            "worlds" => "worldwalls",
+            _ => "",
         };
-        if let Some(p) = page {
-            if self.isl.expanded && self.isl.page == p {
-                self.isl.close(now);
-            } else if self.isl.expanded {
-                self.act(Act::Page(p), now);
-            } else {
-                self.open(p, now);
-            }
-            return;
+        if !page.is_empty() {
+            return self.toggle_page(page, now);
         }
         match cmd {
             "close" => self.isl.close(now),
-            "dnd" => {
-                self.m.dnd = !self.m.dnd;
-                self.m.cfg.dnd = self.m.dnd;
-                self.m.cfg.save();
-            }
+            "dnd" => self.act(Act::Dnd, now),
             "recordToggle" => self.act(Act::Record, now),
-            "recordPause" => self.act(Act::RecPause, now),
-            "worlds" | "worldWalls" => self.open("worldwalls", now),
             "worldNext" => {
-                let order = ["meridian", "sakuga", "katha", "toon"];
-                let cur = order.iter().position(|w| *w == self.m.world).unwrap_or(0);
-                spawn(&[&home().join(".local/bin/loka-world").to_string_lossy(), order[(cur + 1) % 4]]);
+                let cur = WORLDS.iter().position(|w| *w == self.m.world).unwrap_or(0);
+                rice(&["world", WORLDS[(cur + 1) % WORLDS.len()]]);
             }
-            "world" => {
-                if let Some(w) = it.next().filter(|w| matches!(*w, "meridian" | "katha" | "sakuga" | "toon")) {
-                    spawn(&[&home().join(".local/bin/loka-world").to_string_lossy(), w]);
-                }
-            }
-            "theme" => self.open("worldwalls", now),
-            "launched" => {
-                self.launch_until = Some(now + Duration::from_secs(12));
-                return;
-            }
-            "testWifiToast" => {
-                let ssid = it.next().unwrap_or("Network").to_owned();
-                let q = it.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(70.0);
-                self.toast("\u{f0928}", "Connected", &ssid, Some(q / 100.0), 2500, now);
-                sound("connect");
-            }
-            "testBtToast" => {
-                let name = it.collect::<Vec<_>>().join(" ");
-                self.toast("\u{f00b1}", "Connected", if name.is_empty() { "Headphones" } else { &name }, Some(0.8), 2500, now);
-                sound("connect");
-                return;
-            }
-            "testCharge" => {
-                self.toast("\u{f0084}", "Charging", "64%", Some(0.64), 2300, now);
-                sound("charge");
-            }
-            "record" => self.act(Act::Record, now),
+            "launched" => self.launch_until = Some(now + Duration::from_secs(12)),
             "shotCopied" => {
-                let path = line.split_once(' ').map(|(_, p)| p.trim().to_owned()).unwrap_or_default();
-                let name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                spawn(&["notify-send", "-a", "Screenshot", "-i", &path, "-h", "int:transient:1", "Screenshot", &format!("Copied to the clipboard · {name}")]);
+                let name = std::path::Path::new(arg).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                spawn(&["notify-send", "-a", "Screenshot", "-i", arg, "-h", "int:transient:1", "Screenshot", &format!("Copied to the clipboard · {name}")]);
                 sound("screenshot");
             }
             "brightness" => {
-                let v = it.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
-                self.m.bright = v / 100.0;
-                self.isl.show_osd("bright", v / 100.0, false, now);
+                let v = arg.parse::<f32>().unwrap_or(0.0) / 100.0;
+                self.m.bright = v;
+                self.isl.show_osd("bright", v, false, now);
             }
-            "osd" => {
-                let v = it.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(-1.0);
-                let kind = if line.to_lowercase().contains("bright") { "bright" } else { "vol" };
-                if v >= 0.0 {
-                    self.isl.show_osd(kind, v / 100.0, false, now);
-                }
-            }
-            "launcher" => sh_bg("~/.config/rofi/scripts/launcher.sh apps".into()),
             _ => {}
         }
         self.isl.mark();
@@ -774,7 +680,9 @@ impl App {
                         spawn(&["notify-send", "-u", "critical", "-a", "Battery", "-i", "battery-caution", &format!("Battery {}%", b.pct), "Plug in now. The laptop shuts down at 2% and unsaved work is lost."]);
                     } else if b.pct <= 15 && self.low_warned < 1 {
                         self.low_warned = 1;
-                        self.toast("\u{f0083}", "Low battery", &format!("{}% left · plug in soon", b.pct), Some(b.pct as f32 / 100.0), 3500, now);
+                        let mut t = island::Toast::plain("\u{f0083}", "Low battery", &format!("{}% left · plug in soon", b.pct), Some(b.pct as f32 / 100.0), now + Duration::from_millis(3500));
+                        t.force = true;
+                        self.isl.show(t, now);
                         sound("disconnect");
                     }
                 }
@@ -787,10 +695,9 @@ impl App {
                         self.toast("\u{f0928}", "Connected", &w.ssid, Some(w.strength as f32 / 100.0), 2500, now);
                         sound("connect");
                         let ssid = w.ssid.clone();
-                        let script = scripts().join("captive.sh").to_string_lossy().into_owned();
                         std::thread::spawn(move || {
                             std::thread::sleep(Duration::from_millis(2500));
-                            let _ = Command::new(script).arg(ssid).stdout(Stdio::null()).stderr(Stdio::null()).status();
+                            let _ = Command::new(script("captive.sh")).arg(ssid).stdout(Stdio::null()).stderr(Stdio::null()).status();
                         });
                     } else if w.ssid.is_empty() && !prev.ssid.is_empty() && w.enabled {
                         self.toast("\u{f092b}", "Disconnected", &prev.ssid, None, 2500, now);
@@ -857,12 +764,20 @@ impl App {
                     self.m.art_key = art.clone();
                     self.m.art = None;
                     if !art.is_empty() {
-                        let out = run_out(&["loka-art", &art, "44", "10"]);
-                        self.m.art = icons::render_path(std::path::Path::new(out.trim()), 44);
+                        let w = self.waker();
+                        std::thread::spawn(move || {
+                            let path = run_out(&["loka-art", &art, "44", "10"]);
+                            w.send(Msg::Art(art, path.trim().to_owned()));
+                        });
                     }
                 }
                 self.m.media = md;
                 self.peek_media();
+            }
+            Msg::Art(key, path) => {
+                if key == self.m.art_key {
+                    self.m.art = icons::render_path(std::path::Path::new(&path), 44);
+                }
             }
             Msg::Profile(p) => self.m.profile = p,
             Msg::Notify(n, timeout) => {
@@ -887,6 +802,7 @@ impl App {
                         notif: Some(n.id),
                         action,
                         default_action: has_default,
+                        force: n.critical,
                         until: now + Duration::from_secs(if n.actions.is_empty() { secs } else { secs.max(8) }),
                     }, now);
                 }
@@ -899,13 +815,14 @@ impl App {
                 self.rec_status();
             }
             Msg::Clip(c) => {
-                self.m.clip_thumbs.retain(|k, _| c.iter().any(|(_, t)| t.ends_with(k.as_str())));
-                for (_, t) in c.iter().take(20) {
-                    if let Some(path) = t.split("]] ").nth(1)
-                        && !self.m.clip_thumbs.contains_key(path)
-                            && let Some(p) = icons::load_scaled(std::path::Path::new(path), 64) {
-                                self.m.clip_thumbs.insert(path.to_owned(), p);
-                            }
+                self.m.clip_thumbs.retain(|id, _| c.iter().any(|i| i.id == *id));
+                for i in c.iter().take(20) {
+                    if let Some(path) = &i.image
+                        && !self.m.clip_thumbs.contains_key(&i.id)
+                        && let Some(p) = icons::load_scaled(path, 64)
+                    {
+                        self.m.clip_thumbs.insert(i.id, p);
+                    }
                 }
                 self.m.clip = c;
             }
@@ -952,7 +869,7 @@ impl App {
                     self.act(h.act, now);
                 } else if self.isl.page == "clip" {
                     let q = self.m.clip_query.to_lowercase();
-                    if let Some((id, _)) = self.m.clip.iter().find(|(_, t)| q.is_empty() || t.to_lowercase().contains(&q)).cloned() {
+                    if let Some(id) = self.m.clip.iter().find(|i| q.is_empty() || i.text.to_lowercase().contains(&q)).map(|i| i.id) {
                         self.act(Act::ClipCopy(id), now);
                     }
                 }
@@ -1149,14 +1066,14 @@ pub fn run() -> x11::Result<()> {
         low_warned: 0,
         launch_until: None,
     };
-    sh_bg("xset s 600 600 +dpms dpms 0 0 900".into());
+    spawn(&IDLE);
     let mut stats = stats::Stats::new();
     let run = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
     let watch = watch::Watch::new(&[
         (&home().join(".cache/theme"), watch::THEME, &[]),
         (&home().join(".local/state/rice"), watch::THEME, &[]),
         (&run, watch::REC, &["rice-rec"]),
-        (&run.join("panacea"), watch::REC, &["record.state"]),
+        (&run.join("loka"), watch::REC, &["record.state"]),
     ])?;
     app.rec_status();
     let start = Instant::now();
@@ -1178,8 +1095,8 @@ pub fn run() -> x11::Result<()> {
         }
         if now >= next_stats {
             stats.sample();
-            app.bar.set_stats([stats.cpu, stats.mem, stats.gpu()]);
-            app.m.stats = [stats.cpu, stats.mem, stats.gpu()];
+            app.m.stats = [stats.cpu, stats.mem, stats.igpu];
+            app.bar.set_stats(app.m.stats);
             next_stats = now + STATS_EVERY;
         }
         if now >= next_clock {
@@ -1286,8 +1203,7 @@ pub fn run() -> x11::Result<()> {
                                 app.follow_launch(id, now);
                             }
                         if c["focused"].as_bool() == Some(true) && matches!(change, "focus" | "title" | "new" | "fullscreen_mode") {
-                            let f = i3::focus_of(c);
-                            app.bar.set_focus(&f.title, &f.class, f.fullscreen);
+                            app.set_focus(&i3::focus_of(c), now);
                         } else if change == "close" || change == "fullscreen_mode" {
                             resync = true;
                         }
@@ -1339,32 +1255,15 @@ pub fn run() -> x11::Result<()> {
                     if std::env::var_os("LOKA_DEBUG").is_some() {
                         eprintln!("loka: bar click {} {} b{} -> {:?}", e.event_x, e.event_y, e.detail, r);
                     }
-                    if let Some(cmd) = r {
-                        if let Some(rest) = cmd.strip_prefix("loka:traymenu:") {
-                            if let Some((key, x)) = rest.rsplit_once(':') {
-                                app.menu_x = x.parse().unwrap_or(0);
-                                crate::tray::fetch_menu(key.to_owned(), app.hub.waker());
-                            }
-                        } else if let Some(p) = cmd.strip_prefix("loka:") {
-                            let page: &'static str = match p {
-                                "wifi" => "wifi",
-                                "bt" => "bt",
-                                "audio" => "audio",
-                                "power" => "power",
-                                "worldwalls" => "worldwalls",
-                                "record" => "record",
-                                _ => "main",
-                            };
-                            if app.isl.expanded && app.isl.page == page {
-                                app.isl.close(now);
-                            } else if app.isl.expanded {
-                                app.act(Act::Page(page), now);
-                            } else {
-                                app.open(page, now);
-                            }
-                        } else {
-                            app.i3.command(&cmd);
+                    match r {
+                        Some(bar::Click::I3(cmd)) => app.i3.command(&cmd),
+                        Some(bar::Click::Page(p)) => app.toggle_page(p, now),
+                        Some(bar::Click::Record) => app.act(Act::Record, now),
+                        Some(bar::Click::TrayMenu(key, x)) => {
+                            app.menu_x = x;
+                            crate::tray::fetch_menu(key, app.hub.waker());
                         }
+                        None => {}
                     }
                 }
                 Event::ButtonPress(e) if e.event == iw => match app.isl.press(e.event_x as f32, e.event_y as f32, e.detail, now) {
@@ -1400,7 +1299,7 @@ pub fn run() -> x11::Result<()> {
                         app.isl.mark();
                     }
                 }
-                Event::XfixesSelectionNotify(_) => spawn(&[&home().join("dotfiles/loka/shim/loka-clipstore").to_string_lossy()]),
+                Event::XfixesSelectionNotify(_) => drop(std::thread::spawn(clip::store)),
                 _ => {}
             }
         }

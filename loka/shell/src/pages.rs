@@ -228,7 +228,7 @@ fn wifi(ui: &mut Ui, m: &mut Model) {
     ui.button(x + bw + 10.0, y, bw, 34.0, "\u{f0415}", "Hidden…", false, Act::Exec(vec!["nm-connection-editor".into(), "--create".into(), "--type=802-11-wireless".into()]));
     ui.button(x + 2.0 * (bw + 10.0), y, bw, 34.0, "\u{f0493}", "Settings…", false, Act::Exec(vec!["nm-connection-editor".into()]));
     ui.y = y + 44.0;
-    if let Some((ssid, _)) = m.pw_for.clone() {
+    if let Some(ssid) = m.pw_for.clone() {
         let y = ui.y;
         let h = 44.0;
         ui.card(x, y, w, h, true, false);
@@ -250,7 +250,7 @@ fn wifi(ui: &mut Ui, m: &mut Model) {
     }
     let nets = m.nets.clone();
     for n in nets.iter().take(14) {
-        let sec = match n.security.as_str() {
+        let sec = match n.security {
             "open" => "Open",
             "eap" => "Enterprise",
             _ => "Secured",
@@ -470,39 +470,35 @@ fn clipboard(ui: &mut Ui, m: &mut Model) {
     }
     ui.y = y + 46.0;
     let q = m.clip_query.to_lowercase();
-    let items: Vec<(String, String)> = m.clip.iter().filter(|(_, t)| q.is_empty() || t.to_lowercase().contains(&q)).take(12).cloned().collect();
+    let items: Vec<crate::clip::Item> = m.clip.iter().filter(|i| q.is_empty() || i.text.to_lowercase().contains(&q)).take(12).cloned().collect();
     if items.is_empty() {
         ui.note(if m.clip.is_empty() { "Clipboard history is empty." } else { "Nothing found." });
         return;
     }
-    for (id, text) in items {
+    for crate::clip::Item { id, text, image } in items {
         let start = ui.y;
-        let image = text.starts_with("[[ binary");
-        if image {
-            let path = text.split("]] ").nth(1).unwrap_or("").to_owned();
+        if image.is_some() {
             let h = 60.0;
-            let hot = ui.hit(IRect::new(x as i32, start as i32, w as i32, h as i32), Act::ClipCopy(id.clone()));
+            let hot = ui.hit(IRect::new(x as i32, start as i32, w as i32, h as i32), Act::ClipCopy(id));
             if hot {
                 ui.rect(x, start, w, h, 12.0, th.hover);
             }
-            if let Some(t) = m.clip_thumbs.get(&path) {
+            if let Some(t) = m.clip_thumbs.get(&id) {
                 let ty = start + (h - t.height().min(52) as f32) / 2.0;
                 ui.pm.draw_pixmap((x + 10.0) as i32, ty as i32, t.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
             } else {
                 ui.glyph("\u{f02e9}", 18.0, x + 14.0, start + h / 2.0, th.fg);
             }
-            let dims = text.split_whitespace().find(|p| p.contains('x') && p.chars().next().is_some_and(|c| c.is_ascii_digit())).unwrap_or("").to_owned();
             let ts = ui.txt(ui.size - 3.0, 600);
             ui.text("Image", &ts, x + 86.0, start + h / 2.0 - 8.0, th.fg);
             let ss = ui.txt(ui.size - 5.0, 400);
-            ui.text(&dims, &ss, x + 86.0, start + h / 2.0 + 9.0, th.muted);
+            ui.text(&text, &ss, x + 86.0, start + h / 2.0 + 9.0, th.muted);
             ui.y = start + h + 2.0;
         } else {
-            let clean = text.split_whitespace().collect::<Vec<_>>().join(" ");
-            ui.row("\u{f0192}", &clean, "", "    ", false, Act::ClipCopy(id.clone()));
+            ui.row("\u{f0192}", &text, "", "    ", false, Act::ClipCopy(id));
         }
         let rh = ui.y - start - 2.0;
-        let hot = ui.hit(IRect::new((x + w - 36.0) as i32, (start + rh / 2.0 - 14.0) as i32, 28, 28), Act::ClipDelete(id.clone()));
+        let hot = ui.hit(IRect::new((x + w - 36.0) as i32, (start + rh / 2.0 - 14.0) as i32, 28, 28), Act::ClipDelete(id));
         ui.glyph_center("\u{f0156}", 12.0, x + w - 22.0, start + rh / 2.0, if hot { th.crit } else { th.muted });
     }
 }

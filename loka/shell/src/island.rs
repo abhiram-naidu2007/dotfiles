@@ -16,6 +16,7 @@ const PANEL_W: f32 = 540.0;
 const PILL_H: f32 = 38.0;
 const FLARE: f32 = 12.0;
 const PAD: f32 = 18.0;
+const HOT_W: f32 = 160.0;
 
 #[derive(Clone, Debug)]
 pub struct Toast {
@@ -27,7 +28,25 @@ pub struct Toast {
     pub notif: Option<u32>,
     pub action: Option<(String, String)>,
     pub default_action: bool,
+    pub force: bool,
     pub until: Instant,
+}
+
+impl Toast {
+    pub fn plain(glyph: &str, label: &str, title: &str, ring: Option<f32>, until: Instant) -> Self {
+        Self {
+            glyph: glyph.into(),
+            label: label.into(),
+            title: title.into(),
+            body: String::new(),
+            ring,
+            notif: None,
+            action: None,
+            default_action: false,
+            force: false,
+            until,
+        }
+    }
 }
 
 pub enum Ev {
@@ -65,6 +84,8 @@ pub struct Island {
     pub date: String,
     pub media: Option<(String, String, f32)>,
     pub focus: Option<u64>,
+    hidden: bool,
+    stow: Tween,
 }
 
 fn ease() -> Ease {
@@ -103,7 +124,24 @@ impl Island {
             date: String::new(),
             media: None,
             focus: None,
+            hidden: false,
+            stow: Tween::fixed(0.0),
         }
+    }
+
+    fn stowed(&self) -> bool {
+        self.hidden && !self.expanded && !self.peek && self.osd.is_none() && self.toast.is_none()
+    }
+
+    pub fn set_hidden(&mut self, hidden: bool, now: Instant) {
+        if self.hidden == hidden {
+            return;
+        }
+        self.hidden = hidden;
+        if hidden {
+            self.toast = self.toast.take().filter(|t| t.force);
+        }
+        self.retarget(now);
     }
 
     pub fn set_theme(&mut self, t: Theme) {
@@ -119,7 +157,7 @@ impl Island {
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        self.w.running(now) || self.h.running(now) || self.fade.running(now) || self.flip.running(now)
+        self.w.running(now) || self.h.running(now) || self.fade.running(now) || self.flip.running(now) || self.stow.running(now)
     }
 
     pub fn needs_frame(&self, now: Instant) -> bool {
@@ -194,6 +232,8 @@ impl Island {
             self.h.set(h, now, d, ease());
             self.fade.set(0.0, now, Duration::from_millis(120), Ease::OutCubic);
         }
+        let stow = if self.stowed() { 1.0 } else { 0.0 };
+        self.stow.set(stow, now, Duration::from_millis(260), Ease::OutCubic);
         self.dirty = true;
     }
 
@@ -243,11 +283,15 @@ impl Island {
             notif: None,
             action: None,
             default_action: false,
+            force: true,
             until: now + Duration::from_secs(secs),
         }, now);
     }
 
     pub fn show(&mut self, t: Toast, now: Instant) {
+        if self.hidden && !t.force {
+            return;
+        }
         if self.expanded && t.notif.is_none() {
             self.close(now);
         } else if self.expanded {
@@ -268,13 +312,16 @@ impl Island {
         let (x, w, h) = self.panel_rect(now);
         if self.expanded {
             vec![IRect::new(0, 0, SURF_W as i32, SURF_H as i32)]
+        } else if self.stowed() {
+            let hw = w.max(HOT_W);
+            vec![IRect::new(((SURF_W as f32 - hw) / 2.0) as i32, 0, hw.ceil() as i32, 1)]
         } else {
             vec![IRect::new(x as i32, 0, w.ceil() as i32, h.ceil() as i32)]
         }
     }
 
-    fn draw_shape(&self, pm: &mut Pixmap, x: f32, w: f32, h: f32) {
-        let r = if self.expanded || h > PILL_H + 4.0 { 26.0f32.min(h / 2.0) } else { (h / 2.0).min(18.0) };
+    fn draw_shape(&self, pm: &mut Pixmap, x: f32, w: f32, h: f32, full_h: f32) {
+        let r = if self.expanded || full_h > PILL_H + 4.0 { 26.0f32.min(h / 2.0) } else { (h / 2.0).min(18.0) };
         let mut pb = PathBuilder::new();
         pb.move_to(x - FLARE, 0.0);
         pb.quad_to(x, 0.0, x, FLARE.min(h));
@@ -322,7 +369,9 @@ impl Island {
                 self.retarget(now);
             }
         }
-        let (x, w, h) = self.panel_rect(now);
+        let (x, w, full_h) = self.panel_rect(now);
+        let lift = self.stow.value(now).clamp(0.0, 1.0) * (full_h + 2.0);
+        let h = (full_h - lift).max(0.0);
         let bx = IRect::new((x - FLARE - 2.0).floor() as i32, 0, (w + FLARE * 2.0 + 4.0).ceil() as i32, (h + 2.0).ceil() as i32);
         let l = self.last_box;
         let x0 = bx.x.min(l.x);
@@ -330,7 +379,9 @@ impl Island {
         let full = IRect::new(x0, 0, x1 - x0, bx.h.max(l.h)).clip(pm.width() as i32, pm.height() as i32);
         self.last_box = bx;
         canvas::clear(pm, full);
-        self.draw_shape(pm, x, w, h);
+        if h > 0.5 {
+            self.draw_shape(pm, x, w, h, full_h);
+        }
         let fade = self.fade.value(now);
         if fade > 0.01 && (self.expanded || self.fade.running(now)) {
             let vis = (h - PAD).max(0.0) as u32;
@@ -349,16 +400,17 @@ impl Island {
                 }
             }
         }
-        if !self.expanded && fade < 0.5 {
-            self.draw_collapsed(pm, fonts, x, w, h, now);
+        if !self.expanded && fade < 0.5 && h > 0.5 {
+            self.draw_collapsed(pm, fonts, x, w, full_h, -lift, now);
         }
         self.dirty = false;
         full
     }
 
-    fn draw_collapsed(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, x: f32, w: f32, h: f32, now: Instant) {
+    #[allow(clippy::too_many_arguments)]
+    fn draw_collapsed(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, x: f32, w: f32, h: f32, oy: f32, now: Instant) {
         let p = self.pal;
-        let cy = h / 2.0;
+        let cy = oy + h / 2.0;
         if let Some((kind, v, muted, _)) = self.osd {
             let g = match kind {
                 "bright" => "\u{f00df}",
@@ -616,5 +668,60 @@ fn ring(pm: &mut Pixmap, cx: f32, cy: f32, r: f32, v: f32, c: crate::canvas::Rgb
     }
     if let Some(path) = pb.finish() {
         pm.stroke_path(&path, &canvas::paint(c), &stroke, Transform::identity(), None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn island() -> (Island, Instant) {
+        (Island::new(Theme::load()), Instant::now())
+    }
+
+    #[test]
+    fn fullscreen_stows_to_a_top_strip() {
+        let (mut i, now) = island();
+        assert!(i.input_rects(now)[0].h > 1);
+        i.set_hidden(true, now);
+        let r = i.input_rects(now)[0];
+        assert_eq!((r.y, r.h), (0, 1));
+        assert!(r.w >= HOT_W as i32);
+        assert_eq!(i.stow.value(now + Duration::from_secs(1)), 1.0);
+        i.set_hidden(false, now);
+        assert!(i.input_rects(now)[0].h > 1);
+        assert_eq!(i.stow.value(now + Duration::from_secs(1)), 0.0);
+    }
+
+    #[test]
+    fn fullscreen_drops_plain_toasts_and_keeps_forced_ones() {
+        let (mut i, now) = island();
+        i.show(Toast::plain("g", "Connected", "net", None, now + Duration::from_secs(2)), now);
+        i.set_hidden(true, now);
+        assert!(i.toast.is_none());
+        i.show(Toast::plain("g", "Connected", "net", None, now + Duration::from_secs(2)), now);
+        assert!(i.toast.is_none() && i.stowed());
+        let mut t = Toast::plain("g", "Low battery", "9%", None, now + Duration::from_secs(2));
+        t.force = true;
+        i.show(t, now);
+        assert!(i.toast.is_some() && !i.stowed());
+        i.tick(now + Duration::from_secs(3), "");
+        assert!(i.toast.is_none() && i.stowed());
+    }
+
+    #[test]
+    fn pointer_and_keyboard_reveal_while_fullscreen() {
+        let (mut i, now) = island();
+        i.set_hidden(true, now);
+        i.motion(300.0, 0.0, now);
+        assert!(i.peek && !i.stowed());
+        i.leave_at(now);
+        assert!(i.stowed());
+        i.open("main", now);
+        assert!(i.expanded && !i.stowed());
+        i.close(now);
+        assert!(i.stowed());
+        i.show_osd("vol", 0.5, false, now);
+        assert!(!i.stowed());
     }
 }

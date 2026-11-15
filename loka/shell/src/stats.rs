@@ -7,11 +7,9 @@ pub struct Stats {
     prev_idle: u64,
     rc6: Option<PathBuf>,
     prev_rc6: Option<(u64, Instant)>,
-    dgpu: Option<PathBuf>,
     pub cpu: i32,
     pub mem: i32,
     pub igpu: i32,
-    pub dgpu_on: bool,
 }
 
 fn read(p: &std::path::Path) -> Option<String> {
@@ -33,14 +31,8 @@ impl Stats {
                 .map(|e| e.path().join("gt/gt0/rc6_residency_ms"))
                 .find(|p| p.exists())
         });
-        let dgpu = fs::read_dir("/sys/bus/pci/devices").ok().and_then(|d| {
-            d.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| {
-                read(&p.join("vendor")).map(|v| v.trim() == "0x10de").unwrap_or(false)
-                    && read(&p.join("class")).map(|c| c.trim().starts_with("0x0300")).unwrap_or(false)
-            })
-        });
         let (t, i) = cpu_times().unwrap_or((0, 0));
-        Self { prev_total: t, prev_idle: i, rc6, prev_rc6: None, dgpu, cpu: -1, mem: -1, igpu: -1, dgpu_on: false }
+        Self { prev_total: t, prev_idle: i, rc6, prev_rc6: None, cpu: -1, mem: -1, igpu: -1 }
     }
 
     pub fn sample(&mut self) {
@@ -79,15 +71,5 @@ impl Stats {
                 }
                 self.prev_rc6 = Some((r, now));
             }
-        self.dgpu_on = self
-            .dgpu
-            .as_ref()
-            .and_then(|p| read(&p.join("power/runtime_status")))
-            .map(|s| s.trim() == "active")
-            .unwrap_or(false);
-    }
-
-    pub fn gpu(&self) -> i32 {
-        self.igpu
     }
 }

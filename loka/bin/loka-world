@@ -1,6 +1,0 @@
-#!/bin/bash
-w="${1:-meridian}"
-case "$w" in meridian|katha|sakuga|toon) ;; *) echo "usage: loka-world meridian|katha|sakuga|toon" >&2; exit 1 ;; esac
-mkdir -p "$HOME/.config/loka"
-printf '%s\n' "$w" > "$HOME/.config/loka/world"
-exec "$HOME/.local/bin/rice" world "$w"

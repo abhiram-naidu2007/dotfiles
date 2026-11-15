@@ -9,7 +9,7 @@ restart() {   # SIGKILL after 2 s if it hangs
 ~/.config/i3/scripts/compositor.sh        # picom, with the shadow and shader of the current mood
 if [ -e "$HOME/.config/loka/shell-on" ]; then
     pkill -x polybar; pkill -x dunst
-    restart loka; setsid "$HOME/.local/bin/loka-shell" >/dev/null 2>&1 &
+    restart loka; setsid "$HOME/.local/bin/loka" >/dev/null 2>&1 &
 else
     restart loka
     restart polybar; setsid polybar -q main >/dev/null 2>&1 &

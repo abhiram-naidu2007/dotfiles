@@ -4,7 +4,6 @@ if pgrep -x loka >/dev/null && "$HOME/.local/bin/loka" msg "$fn" "$@" 2>/dev/nul
     exit 0
 fi
 case "$fn" in
-    launcher) exec ~/.config/rofi/scripts/launcher.sh apps ;;
     powermenu) exec ~/.config/i3/scripts/powermenu.sh ;;
     clipboard) exec sh -c 'pgrep -x xfce4-clipman >/dev/null || { setsid xfce4-clipman >/dev/null 2>&1 & sleep 0.5; }; xfce4-popup-clipman' ;;
 esac

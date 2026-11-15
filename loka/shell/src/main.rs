@@ -3,6 +3,7 @@ mod app;
 mod audio;
 mod bar;
 mod canvas;
+mod clip;
 mod config;
 mod dot;
 mod i3;
@@ -22,6 +23,7 @@ mod tray;
 mod ui;
 mod walls;
 mod watch;
+mod wifi;
 mod x11;
 
 fn main() {

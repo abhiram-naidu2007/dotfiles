@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::anim::Ease;
 use crate::canvas::Rgba;
+use crate::config::home;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldId {
@@ -97,10 +98,6 @@ impl Palette {
 pub struct Theme {
     pub world: World,
     pub pal: Palette,
-}
-
-fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
 }
 
 pub fn palette_path() -> PathBuf {

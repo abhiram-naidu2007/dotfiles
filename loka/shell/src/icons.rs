@@ -3,13 +3,11 @@ use std::path::{Path, PathBuf};
 
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
+use crate::config::home;
+
 pub struct Icons {
     index: Option<HashMap<String, String>>,
     cache: HashMap<(String, u32), Option<Pixmap>>,
-}
-
-fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
 }
 
 fn app_dirs() -> Vec<PathBuf> {

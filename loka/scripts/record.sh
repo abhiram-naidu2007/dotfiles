@@ -1,11 +1,7 @@
 #!/bin/bash
-
-STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/panacea"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/loka"
 STATE="$STATE_DIR/record.state"
 mkdir -p "$STATE_DIR"
-
-PATH="$PATH:/usr/bin:/usr/local/bin:$HOME/.local/bin:/bin:/usr/sbin:/sbin:/opt/bin"
-export PATH
 
 read_state() {
     PID=""; STARTED=""; PAUSED_AT=""; PAUSED_TOTAL=0; FILE=""; MODULES=""
@@ -50,14 +46,7 @@ unload_modules() {
 finalize() {
     f="$1"
     [ -s "$f" ] || return 0
-    command -v ffmpeg >/dev/null 2>&1 || return 0
-
-    has_audio=""
-    if command -v ffprobe >/dev/null 2>&1; then
-        has_audio=$(ffprobe -v error -select_streams a -show_entries stream=index \
-                            -of csv=p=0 "$f" 2>/dev/null | head -1)
-    fi
-
+    has_audio=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$f" 2>/dev/null | head -1)
     tmp="${f%.mp4}.tmp.mp4"
     if [ -n "$has_audio" ]; then
         ffmpeg -y -v error -i "$f" -c copy -movflags +faststart "$tmp" 2>/dev/null
@@ -74,12 +63,6 @@ finalize() {
 case "$1" in
     start)
         if read_state; then echo "already" >&2; exit 1; fi
-
-        command -v ffmpeg >/dev/null 2>&1 || {
-            notify-send -a Panacea -u critical "Recording unavailable" "ffmpeg is not installed"
-            exit 1
-        }
-
         FPS="${2:-60}"
         DIR="${3:-$HOME/Videos}"
         SYS="${4:-0}"
@@ -89,7 +72,7 @@ case "$1" in
 
         DIR="${DIR/#\~/$HOME}"
         mkdir -p "$DIR" || exit 1
-        FILE="$DIR/panacea-$(date +%Y%m%d-%H%M%S).mp4"
+        FILE="$DIR/rec-$(date +%F_%H-%M-%S).mp4"
 
         [ -z "$MIC_DEV" ] && MIC_DEV=$(default_mic)
         SYS_DEV=$(default_monitor)
@@ -98,15 +81,15 @@ case "$1" in
         AUDIO_DEV=""
 
         if [ "$SYS" = "1" ] && [ "$MIC" = "1" ]; then
-            m=$(pactl load-module module-null-sink sink_name=panacea_mix \
-                    sink_properties=device.description=PanaceaMix 2>/dev/null) || m=""
+            m=$(pactl load-module module-null-sink sink_name=loka_mix \
+                    sink_properties=device.description=LokaMix 2>/dev/null) || m=""
             if [ -n "$m" ]; then
                 MODULES="$m"
                 l1=$(pactl load-module module-loopback source="$SYS_DEV" \
-                        sink=panacea_mix latency_msec=40 2>/dev/null) && MODULES="$MODULES $l1"
+                        sink=loka_mix latency_msec=40 2>/dev/null) && MODULES="$MODULES $l1"
                 l2=$(pactl load-module module-loopback source="$MIC_DEV" \
-                        sink=panacea_mix latency_msec=40 2>/dev/null) && MODULES="$MODULES $l2"
-                AUDIO_DEV="panacea_mix.monitor"
+                        sink=loka_mix latency_msec=40 2>/dev/null) && MODULES="$MODULES $l2"
+                AUDIO_DEV="loka_mix.monitor"
             else
                 AUDIO_DEV="$SYS_DEV"
             fi
@@ -132,7 +115,7 @@ case "$1" in
         W=$(( W / 2 * 2 )); H=$(( H / 2 * 2 ))
         if [ "$W" -lt 160 ] || [ "$H" -lt 120 ]; then
             unload_modules "$MODULES"
-            notify-send -a Panacea -i dialog-warning "Recording not started" "area ${W}x${H} is too small"
+            notify-send -a Recording -i dialog-warning "Recording not started" "area ${W}x${H} is too small"
             exit 1
         fi
         grab=(-f x11grab -framerate "$FPS" -video_size "${W}x${H}" -i "${DISPLAY:-:0}+${X},${Y}")
@@ -165,9 +148,7 @@ case "$1" in
             unload_modules "$MODULES"
             echo "failed" >&2
             tail -4 "$STATE_DIR/record.log" >&2
-            err=$(tail -2 "$STATE_DIR/record.log" 2>/dev/null | tr '\n' ' ')
-            command -v notify-send >/dev/null 2>&1 && \
-                notify-send -a Panacea -u critical "Recording did not start" "$err"
+            notify-send -a Recording -u critical "Recording did not start" "$(tail -2 "$STATE_DIR/record.log" 2>/dev/null | tr '\n' ' ')"
             exit 1
         fi
 
@@ -224,26 +205,8 @@ case "$1" in
         fi
         ;;
 
-    mics)
-        pactl -f json list sources 2>/dev/null | python3 -c '
-import json, sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-for s in data:
-    name = s.get("name", "")
-    if name.endswith(".monitor") or s.get("monitor_source_name"):
-        continue
-    if name.startswith("panacea_mix"):
-        continue
-    desc = (s.get("description") or name)
-    print(f"{name}|{desc}")
-'
-        ;;
-
     *)
-        echo "usage: record.sh start FPS DIR SYS MIC [MIC_DEV] | pause | stop | status | mics" >&2
+        echo "usage: record.sh start FPS DIR SYS MIC [MIC_DEV [OUTPUT|area]] | pause | stop | status" >&2
         exit 1
         ;;
 esac

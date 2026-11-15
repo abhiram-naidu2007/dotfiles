@@ -16,15 +16,6 @@ pub const EV_OUTPUT: u32 = EVENT_BIT | 1;
 pub const EV_WINDOW: u32 = EVENT_BIT | 3;
 pub const EV_SHUTDOWN: u32 = EVENT_BIT | 6;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Workspace {
-    pub num: i32,
-    pub name: String,
-    pub focused: bool,
-    pub urgent: bool,
-    pub output: String,
-}
-
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Focus {
     pub title: String,
@@ -40,10 +31,6 @@ pub struct I3 {
 }
 
 fn socket_path() -> Option<String> {
-    if let Ok(s) = std::env::var("I3SOCK")
-        && !s.is_empty() {
-            return Some(s);
-        }
     let out = std::process::Command::new("i3").arg("--get-socketpath").output().ok()?;
     let s = String::from_utf8(out.stdout).ok()?.trim().to_owned();
     (!s.is_empty()).then_some(s)
@@ -173,20 +160,12 @@ impl I3 {
         out
     }
 
-    pub fn workspaces(&mut self) -> Vec<Workspace> {
-        let Some(Value::Array(a)) = self.request(GET_WORKSPACES, "") else { return Vec::new() };
-        let mut v: Vec<Workspace> = a
-            .iter()
-            .map(|w| Workspace {
-                num: w["num"].as_i64().unwrap_or(-1) as i32,
-                name: w["name"].as_str().unwrap_or_default().to_owned(),
-                focused: w["focused"].as_bool().unwrap_or(false),
-                urgent: w["urgent"].as_bool().unwrap_or(false),
-                output: w["output"].as_str().unwrap_or_default().to_owned(),
-            })
-            .collect();
-        v.sort_by_key(|w| w.num);
-        v
+    pub fn workspaces(&mut self) -> (Vec<i32>, i32) {
+        let Some(Value::Array(a)) = self.request(GET_WORKSPACES, "") else { return (Vec::new(), -1) };
+        let num = |w: &Value| w["num"].as_i64().unwrap_or(-1) as i32;
+        let mut nums: Vec<i32> = a.iter().map(num).collect();
+        nums.sort_unstable();
+        (nums, a.iter().find(|w| w["focused"].as_bool() == Some(true)).map_or(-1, num))
     }
 
     pub fn focus(&mut self) -> Focus {
@@ -204,9 +183,7 @@ impl I3 {
         }
         Focus::default()
     }
-}
 
-impl I3 {
     pub fn locate(&mut self, con_id: i64) -> Option<(i32, String, String)> {
         let tree = self.request(GET_TREE, "")?;
         fn walk(n: &Value, ws: Option<i32>, id: i64) -> Option<(i32, String, String)> {
@@ -240,7 +217,7 @@ pub fn focus_of(n: &Value) -> Focus {
     Focus {
         title: n["name"].as_str().unwrap_or_default().to_owned(),
         class: n["window_properties"]["class"].as_str().unwrap_or_default().to_owned(),
-        fullscreen: n["fullscreen_mode"].as_i64().unwrap_or(0) == 1,
+        fullscreen: n["fullscreen_mode"].as_i64().unwrap_or(0) > 0,
     }
 }
 

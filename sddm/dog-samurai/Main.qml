@@ -16,9 +16,6 @@ Item {
     height: 1080
     readonly property real s: Screen.height / 1080
 
-    // Quickshell
-    property bool isQuickshell: typeof sddm === "undefined" || sddm.hostName === undefined
-
     // Colors
     readonly property color textPrimary:   "#f8f1e5"
     readonly property color textSecondary: "#8b949e"
@@ -626,7 +623,6 @@ Item {
             // Session
             Item {
                 id: sessContainer
-                visible: !root.isQuickshell
                 width: sessLayout.implicitWidth
                 height: 40 * s
                 anchors.left: powerActions.right

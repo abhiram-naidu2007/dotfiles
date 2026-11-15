@@ -61,6 +61,14 @@ impl Colors {
     }
 }
 
+#[derive(Debug)]
+pub enum Click {
+    I3(String),
+    Page(&'static str),
+    TrayMenu(String, i32),
+    Record,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Hit {
     Launcher,
@@ -656,18 +664,19 @@ impl Bar {
         }
     }
 
-    pub fn click(&mut self, x: f32, y: f32, button: u8, now: Instant) -> Option<String> {
+    pub fn click(&mut self, x: f32, y: f32, button: u8, now: Instant) -> Option<Click> {
+        let exec = |cmd: &str| Some(Click::I3(format!("exec --no-startup-id {cmd}")));
         match (self.hit(x, y), button) {
             (Some(Hit::Workspace(id)), 1) => {
                 self.set_focused(id, now);
-                Some(format!("workspace number {id}"))
+                Some(Click::I3(format!("workspace number {id}")))
             }
             (Some(Hit::Workspace(_)), 4 | 5) => {
                 let i = self.workspaces.iter().position(|w| *w == self.focused)?;
                 let n = if button == 5 { (i + 1).min(self.workspaces.len() - 1) } else { i.saturating_sub(1) };
                 let id = self.workspaces[n];
                 self.set_focused(id, now);
-                Some(format!("workspace number {id}"))
+                Some(Click::I3(format!("workspace number {id}")))
             }
             (Some(Hit::Volume), 4) => {
                 crate::audio::control(crate::audio::Ctl::Step(0.05));
@@ -681,20 +690,20 @@ impl Bar {
                 crate::audio::control(crate::audio::Ctl::ToggleMute);
                 None
             }
-            (Some(Hit::Volume), 3) => Some("exec --no-startup-id pavucontrol".into()),
-            (Some(Hit::Volume), 1) => Some("loka:audio".into()),
-            (Some(Hit::Wifi), 3) => Some("exec --no-startup-id nm-connection-editor".into()),
-            (Some(Hit::Wifi), 1) => Some("loka:wifi".into()),
-            (Some(Hit::Bluetooth), 1) => Some("loka:bt".into()),
-            (Some(Hit::Bluetooth), 3) => Some("exec --no-startup-id blueman-manager".into()),
+            (Some(Hit::Volume), 3) => exec("pavucontrol"),
+            (Some(Hit::Volume), 1) => Some(Click::Page("audio")),
+            (Some(Hit::Wifi), 3) => exec("nm-connection-editor"),
+            (Some(Hit::Wifi), 1) => Some(Click::Page("wifi")),
+            (Some(Hit::Bluetooth), 1) => Some(Click::Page("bt")),
+            (Some(Hit::Bluetooth), 3) => exec("blueman-manager"),
             (Some(Hit::Tray(i)), b) => {
                 let it = self.tray.get(i)?;
                 let (xi, yi) = (x as i32, (TOP + self.theme.world.pill_h + 6.0) as i32);
                 if b == 1 && it.id.to_lowercase().contains("zapfast") {
-                    return Some("exec --no-startup-id ~/.local/bin/loka-zapfast".into());
+                    return exec("~/.local/bin/loka-zapfast");
                 }
                 if b == 3 {
-                    return Some(format!("loka:traymenu:{}:{}", it.key, xi));
+                    return Some(Click::TrayMenu(it.key.clone(), xi));
                 }
                 let a = match b {
                     1 => crate::tray::Act::Activate(it.key.clone(), xi, yi),
@@ -703,21 +712,17 @@ impl Bar {
                 crate::tray::act(a);
                 None
             }
-            (Some(Hit::Power), 1) => Some("loka:power".into()),
-            (Some(Hit::Rec), 1) => Some("loka:record".into()),
-            (Some(Hit::Rec), 3) => Some("exec --no-startup-id ~/.local/bin/loka msg recordToggle".into()),
-            (Some(Hit::Power), 3) => Some("exec --no-startup-id ~/.config/i3/scripts/powermenu.sh".into()),
-            (Some(Hit::Stats), 1) => Some("loka:main".into()),
-            (Some(Hit::Battery), 1) => Some("loka:main".into()),
-            (Some(Hit::Battery), 3) => Some("exec --no-startup-id ~/.config/i3/scripts/settings.sh".into()),
-            (Some(Hit::Launcher), 1) => Some("exec --no-startup-id ~/.config/rofi/scripts/launcher.sh apps".into()),
-            (Some(Hit::Web), 1) => Some("exec --no-startup-id ~/.config/rofi/scripts/launcher.sh web".into()),
+            (Some(Hit::Power), 1 | 3) => Some(Click::Page("power")),
+            (Some(Hit::Rec), 1) => Some(Click::Page("record")),
+            (Some(Hit::Rec), 3) => Some(Click::Record),
+            (Some(Hit::Stats | Hit::Battery), 1) => Some(Click::Page("main")),
+            (Some(Hit::Battery), 3) => exec("~/.config/i3/scripts/settings.sh"),
+            (Some(Hit::Launcher), 1) => exec("~/.config/rofi/scripts/launcher.sh apps"),
+            (Some(Hit::Web), 1) => exec("~/.config/rofi/scripts/launcher.sh web"),
             _ => None,
         }
     }
-}
 
-impl Bar {
     pub fn resize(&mut self, width: u16) {
         self.width = width as f32;
         self.dirty = true;

@@ -223,29 +223,6 @@ impl Display {
     }
 }
 
-pub fn keysym_char(ks: u32) -> Option<char> {
-    match ks {
-        0x20..=0x7e | 0xa0..=0xff => char::from_u32(ks),
-        0x0100_0000..=0x0110_ffff => char::from_u32(ks - 0x0100_0000),
-        _ => None,
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::keysym_char;
-
-    #[test]
-    fn keysyms_map_to_chars() {
-        assert_eq!(keysym_char(0x61), Some('a'));
-        assert_eq!(keysym_char(0x41), Some('A'));
-        assert_eq!(keysym_char(0xe9), Some('é'));
-        assert_eq!(keysym_char(0x0100_0c05), Some('అ'));
-        assert_eq!(keysym_char(0xff0d), None);
-    }
-}
-
 impl Display {
     pub fn grab_pointer(&self, s: &Surface) -> bool {
         use x11rb::protocol::xproto::{EventMask, GrabMode, GrabStatus};
@@ -260,9 +237,7 @@ impl Display {
         let _ = self.conn.ungrab_pointer(x11rb::CURRENT_TIME);
         let _ = self.conn.flush();
     }
-}
 
-impl Display {
     pub fn destroy(&self, s: Surface) {
         let _ = self.conn.shm_detach(s.seg);
         let _ = self.conn.free_gc(s.gc);
@@ -270,9 +245,7 @@ impl Display {
         let _ = self.conn.flush();
         drop(s);
     }
-}
 
-impl Display {
     pub fn watch_screen(&self) -> Result<()> {
         use x11rb::protocol::randr::{ConnectionExt as _, NotifyMask};
         let root = self.conn.setup().roots[self.screen].root;
@@ -296,9 +269,7 @@ impl Display {
         use x11rb::protocol::xproto::ConfigureWindowAux;
         let _ = self.conn.configure_window(s.win, &ConfigureWindowAux::new().x(x as i32).y(y as i32));
     }
-}
 
-impl Display {
     pub fn reload_keymap(&mut self) {
         use x11rb::protocol::xproto::ConnectionExt as _;
         let (min_kc, max_kc) = (self.conn.setup().min_keycode, self.conn.setup().max_keycode);
@@ -310,3 +281,24 @@ impl Display {
     }
 }
 
+pub fn keysym_char(ks: u32) -> Option<char> {
+    match ks {
+        0x20..=0x7e | 0xa0..=0xff => char::from_u32(ks),
+        0x0100_0000..=0x0110_ffff => char::from_u32(ks - 0x0100_0000),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keysym_char;
+
+    #[test]
+    fn keysyms_map_to_chars() {
+        assert_eq!(keysym_char(0x61), Some('a'));
+        assert_eq!(keysym_char(0x41), Some('A'));
+        assert_eq!(keysym_char(0xe9), Some('é'));
+        assert_eq!(keysym_char(0x0100_0c05), Some('అ'));
+        assert_eq!(keysym_char(0xff0d), None);
+    }
+}

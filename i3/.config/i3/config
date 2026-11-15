@@ -65,7 +65,7 @@ bindsym $mod+t exec --no-startup-id ~/.local/bin/loka-key worlds
 ## worlds: jump straight to the next world
 bindsym $mod+Shift+t exec --no-startup-id ~/.local/bin/loka-key worldNext
 ## wallpapers of the current world (pictures and live)
-bindsym $mod+Control+w exec --no-startup-id ~/.local/bin/loka-key worldWalls
+bindsym $mod+Control+w exec --no-startup-id ~/.local/bin/loka-key worlds
 ## draw a new mathematical wallpaper
 bindsym $mod+Control+a exec ~/.local/bin/rice art
 ## live wallpaper moves / holds still (rests while windows are open)
