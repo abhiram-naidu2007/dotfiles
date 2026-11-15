@@ -9,6 +9,13 @@ const float LEVELS = 15.0;
 const float COLOUR = 0.18;
 const float SPREAD = 0.14;
 const float FIBRE = 0.014;
+const float SAT_INK = 0.35;
+const float GAP = 0.32;
+const float TEXT_ON = 0.72;
+
+const ivec2 RING[8] = ivec2[8](
+    ivec2(2, 0), ivec2(-2, 0), ivec2(0, 2), ivec2(0, -2),
+    ivec2(3, 3), ivec2(-3, -3), ivec2(3, -3), ivec2(-3, 3));
 
 const float BAYER[16] = float[16](
      0.0,  8.0,  2.0, 10.0,
@@ -28,9 +35,15 @@ float vnoise(vec2 p) {
     return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 
-vec3 straight(ivec2 p) {
-    vec4 c = texelFetch(tex, p, 0);
-    return c.a > 0.0 ? c.rgb / c.a : vec3(1.0);
+float tone(vec3 rgb) {
+    float top = max(rgb.r, max(rgb.g, rgb.b));
+    float sat = top - min(rgb.r, min(rgb.g, rgb.b));
+    return lstar(luma(rgb * (1.0 - SAT_INK * sat * top)));
+}
+
+float tone_at(ivec2 p) {
+    vec4 c = texelFetch(tex, clamp(p, ivec2(0), textureSize(tex, 0) - 1), 0);
+    return c.a > 0.0 ? tone(c.rgb / c.a) : 1.0;
 }
 
 vec4 window_shader() {
@@ -39,9 +52,19 @@ vec4 window_shader() {
     if (c.a <= 0.0) return default_post_processing(c);
     vec3 rgb = c.rgb / c.a;
 
-    float l = lstar(luma(rgb));
-    float n = min(min(lstar(luma(straight(p + ivec2(1, 0)))), lstar(luma(straight(p - ivec2(1, 0))))),
-                  min(lstar(luma(straight(p + ivec2(0, 1)))), lstar(luma(straight(p - ivec2(0, 1))))));
+    float l = tone(rgb);
+    float hi = l, sum = 0.0;
+    for (int i = 0; i < 8; i++) {
+        float t = tone_at(p + RING[i]);
+        hi = max(hi, t);
+        sum += t;
+    }
+    float d = hi - l;
+    if (hi > TEXT_ON && hi - sum / 8.0 < 0.5 * d + 0.02 && d > 0.02 && d < GAP)
+        l = hi - mix(d, GAP, clamp((d - 0.02) / 0.06, 0.0, 1.0));
+
+    float n = min(min(tone_at(p + ivec2(1, 0)), tone_at(p - ivec2(1, 0))),
+                  min(tone_at(p + ivec2(0, 1)), tone_at(p - ivec2(0, 1))));
     l = mix(l, min(l, n), SPREAD);
 
     ivec2 s = ivec2(gl_FragCoord.xy) & 3;
