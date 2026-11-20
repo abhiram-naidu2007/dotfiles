@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=org.freedesktop.Notifications
+# loka is the notification daemon when ~/.config/loka/shell-on exists; never let D-Bus
+# start dunst then, or dunst keeps the name after loka comes back. Without loka, dunst.
+Exec=/bin/sh -c 'test -e "$HOME/.config/loka/shell-on" || exec dunst'
