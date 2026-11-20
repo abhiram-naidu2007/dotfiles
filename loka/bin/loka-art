@@ -19,21 +19,28 @@ case "$src" in
     *) exit 1 ;;
 esac
 
-in="$tmp"
-read -r w h < <(magick identify -format '%w %h\n' "$tmp[0]" 2>/dev/null) || exit 1
-if magick "$tmp[0]" -bordercolor black -border 1 -fuzz 8% -trim +repage "$tmp.trim.png" 2>/dev/null; then
+# Album art can come from any web page: only ordinary picture formats are opened, and ImageMagick
+# is told the format, so it never guesses one (SVG, MSL, PostScript ...) from the contents.
+case "$(file -b --mime-type "$tmp")" in
+    image/png) fmt=png ;; image/jpeg) fmt=jpeg ;; image/webp) fmt=webp ;; image/gif) fmt=gif ;; image/bmp|image/x-ms-bmp) fmt=bmp ;;
+    *) exit 1 ;;
+esac
+src_img="$fmt:$tmp[0]"
+in="$src_img"
+read -r w h < <(magick identify -format '%w %h\n' "$src_img" 2>/dev/null) || exit 1
+if magick "$src_img" -bordercolor black -border 1 -fuzz 8% -trim +repage "$tmp.trim.png" 2>/dev/null; then
     read -r tw th < <(magick identify -format '%w %h\n' "$tmp.trim.png")
     if [ $((tw * th * 2)) -ge $((w * h)) ] && { [ "$tw" -lt "$w" ] || [ "$th" -lt "$h" ]; }; then
-        in="$tmp.trim.png"
+        in="png:$tmp.trim.png"
     fi
 fi
 
-if [ "$(magick identify -format '%[opaque]' "$tmp[0]" 2>/dev/null)" = False ]; then
-    in="$tmp"; fit="${size}x${size}"
+if [ "$(magick identify -format '%[opaque]' "$src_img" 2>/dev/null)" = False ]; then
+    in="$src_img"; fit="${size}x${size}"
 else
     fit="${size}x${size}^"
 fi
-magick "$in[0]" -background none -colorspace RGB -filter Lanczos -resize "$fit" -colorspace sRGB \
+magick "$in" -background none -colorspace RGB -filter Lanczos -resize "$fit" -colorspace sRGB \
     -gravity center -extent "${size}x${size}" \
     \( -size "${size}x${size}" xc:none -fill white -draw "roundrectangle 0,0,$((size - 1)),$((size - 1)),$radius,$radius" \) \
     -alpha set -compose DstIn -composite "$out.tmp.png" || exit 1
