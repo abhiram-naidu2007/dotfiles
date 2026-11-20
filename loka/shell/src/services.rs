@@ -139,7 +139,8 @@ fn upower(w: &Waker) -> zbus::Result<()> {
         .interface("org.freedesktop.UPower.Device")?
         .cache_properties(zbus::proxy::CacheProperties::No)
         .build()?;
-    let props = Proxy::new(&conn, "org.freedesktop.UPower", path, "org.freedesktop.DBus.Properties")?;
+    let sig = Connection::system()?; // signals on their own connection, as in `changes`
+    let props = Proxy::new(&sig, "org.freedesktop.UPower", path, "org.freedesktop.DBus.Properties")?;
     let signals = props.receive_signal("PropertiesChanged")?;
     let mut last = battery_read(&dev);
     w.send(Msg::Battery(last.clone()));
@@ -162,7 +163,11 @@ fn plain(conn: &Connection, dest: &str, path: &str, iface: &str) -> zbus::Result
         .build()
 }
 
-fn changes(conn: &Connection, sender: &str) -> zbus::Result<zbus::blocking::MessageIterator> {
+// Signals arrive on a connection of their own. The watchers make property calls on their main
+// connection for every signal; sharing one connection, a full signal queue would hold back the
+// replies to those calls.
+fn changes(sender: &str) -> zbus::Result<zbus::blocking::MessageIterator> {
+    let conn = &Connection::system()?;
     let rule = zbus::MatchRule::builder()
         .msg_type(zbus::message::Type::Signal)
         .sender(sender.to_owned())?
@@ -269,7 +274,7 @@ fn bt_read(conn: &Connection) -> zbus::Result<(Bt, Vec<crate::model::BtDev>)> {
 
 fn bluetooth(w: &Waker) -> zbus::Result<()> {
     let conn = Connection::system()?;
-    let events = changes(&conn, "org.bluez")?;
+    let events = changes("org.bluez")?;
     let (mut last, mut ldevs) = bt_read(&conn).unwrap_or((Bt { powered: false, connected: String::new(), battery: -1 }, Vec::new()));
     w.send(Msg::Bt(last.clone()));
     w.send(Msg::BtDevs(ldevs.clone()));
@@ -334,7 +339,7 @@ pub fn bt_action(what: &'static str, path: Option<String>) {
 fn profiles(w: &Waker) -> zbus::Result<()> {
     let conn = Connection::system()?;
     let p = plain(&conn, "net.hadess.PowerProfiles", "/net/hadess/PowerProfiles", "net.hadess.PowerProfiles")?;
-    let events = changes(&conn, "net.hadess.PowerProfiles")?;
+    let events = changes("net.hadess.PowerProfiles")?;
     let mut last: String = p.get_property("ActiveProfile").unwrap_or_default();
     w.send(Msg::Profile(last.clone()));
     for _ in events {
