@@ -3,12 +3,18 @@ in vec2 texcoord;
 uniform sampler2D tex;
 vec4 default_post_processing(vec4 c);
 
-const vec3 PAPER = vec3(0.890, 0.882, 0.863);
-const vec3 INK = vec3(0.247, 0.243, 0.235);
+// warm cream paper and near-black ink (v2, after surface-dots' reading mode)
+const vec3 PAPER = vec3(0.925, 0.905, 0.855);
+const vec3 INK = vec3(0.150, 0.145, 0.150);
 const float LEVELS = 15.0;
 const float COLOUR = 0.18;
 const float SPREAD = 0.14;
-const float FIBRE = 0.014;
+const float FIBRE = 0.022;
+// levels: tones below BLACK_PT print as full ink, above WHITE_PT as bare paper. The paper
+// palette's own text (L ~0.33) then lands near ink instead of a mid grey.
+const float BLACK_PT = 0.24;
+const float WHITE_PT = 0.94;
+const float SCURVE = 0.25;  // share of an S-curve on the tone after the levels
 const float SAT_INK = 0.35;
 const float GAP = 0.48;
 const float TEXT_ON = 0.72;
@@ -68,6 +74,8 @@ vec4 window_shader() {
     float n = min(min(tone_at(p + ivec2(1, 0)), tone_at(p - ivec2(1, 0))),
                   min(tone_at(p + ivec2(0, 1)), tone_at(p - ivec2(0, 1))));
     l = mix(l, min(l, n), SPREAD);
+    l = clamp((l - BLACK_PT) / (WHITE_PT - BLACK_PT), 0.0, 1.0);
+    l = mix(l, smoothstep(0.03, 0.97, l), SCURVE);
 
     ivec2 s = ivec2(gl_FragCoord.xy) & 3;
     float threshold = (BAYER[s.y * 4 + s.x] + 0.5) / 16.0 - 0.5;
@@ -79,9 +87,12 @@ vec4 window_shader() {
     page = mix(page, tint, COLOUR * (1.0 - q * 0.6));
 
     vec2 g = gl_FragCoord.xy;
-    float fibre = vnoise(g * vec2(0.9, 0.22)) * 0.6 + vnoise(g * 0.45) * 0.4 - 0.5;
+    float fibre = vnoise(g * vec2(1.1, 0.18)) * 0.6 + vnoise(g * 0.45) * 0.4 - 0.5;
     page *= 1.0 + fibre * FIBRE * q * grain;
 
+    // paper is opaque: a translucent terminal (alpha 0.9) would let the wallpaper show through
+    // the text. Faint pixels (client-side shadows, antialiased corners) keep their alpha.
+    float a = mix(c.a, 1.0, smoothstep(0.6, 0.85, c.a));
     vec3 outc = clamp(srgb(page), 0.0, 1.0);
-    return default_post_processing(vec4(outc * c.a, c.a));
+    return default_post_processing(vec4(outc * a, a));
 }
