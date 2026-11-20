@@ -538,8 +538,11 @@ fn clipboard(ui: &mut Ui, m: &Model) {
                 ui.rect(x, start, w, h, 12.0, c);
             }
             if let Some(t) = m.clip_thumbs.get(&id) {
-                let ty = start + (h - t.height().min(52) as f32) / 2.0;
-                ui.pm.draw_pixmap((x + 10.0) as i32, ty as i32, t.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+                // fit inside 64×52, so a tall picture never runs into the next row
+                let k = (52.0 / t.height() as f32).min(64.0 / t.width() as f32).min(1.0);
+                let (tw, th2) = (t.width() as f32 * k, t.height() as f32 * k);
+                let paint = PixmapPaint { quality: tiny_skia::FilterQuality::Bilinear, ..PixmapPaint::default() };
+                ui.pm.draw_pixmap(0, 0, t.as_ref(), &paint, Transform::from_row(k, 0.0, 0.0, k, x + 10.0 + (64.0 - tw) / 2.0, start + (h - th2) / 2.0), None);
             } else {
                 ui.glyph("\u{f02e9}", 18.0, x + 14.0, start + h / 2.0, th.fg);
             }

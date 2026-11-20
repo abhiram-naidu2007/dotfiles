@@ -527,6 +527,12 @@ impl Island {
             let t0 = Instant::now();
             self.render_content(fonts, m, now);
             self.last_content_ms = t0.elapsed().as_secs_f32() * 1000.0;
+            // shorter content (a search, a page change) must not leave the view past its end
+            let view = SURF_H as f32 - 2.0 - PAD * 2.0;
+            let max = (self.content_h - view).max(0.0);
+            if self.scroll.target() > max {
+                self.scroll.snap(max);
+            }
             if (before - self.content_h).abs() > 0.5 {
                 self.retarget(now);
             }
