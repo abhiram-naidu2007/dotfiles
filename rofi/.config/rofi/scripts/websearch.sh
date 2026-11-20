@@ -20,14 +20,21 @@ case "$key" in
     ai)   base="https://claude.ai/new?q=" ;;
     *)    base= ;;
 esac
+url=
 if [ -n "$base" ] && [ -n "$rest" ]; then
     url="$base$(enc "$rest")"
 else
     case "$q" in
         *" "*) url="https://www.google.com/search?q=$(enc "$q")" ;;
         http://*|https://*) url=$q ;;
-        localhost*|*.[a-z][a-z]|*.[a-z][a-z][a-z]|*.[a-z][a-z][a-z][a-z]|*.[a-z]*/*) url="https://$q" ;;
-        *) url="https://www.google.com/search?q=$(enc "$q")" ;;
+        localhost|localhost[:/]*) url="http://$q" ;;
+        *) # an address only when the host ends in a real domain ending: file.py and node.js are searched
+           host=${q%%/*}; host=${host%%:*}; tld=${host##*.}
+           case "${tld,,}" in
+               com|org|net|edu|gov|io|dev|app|ai|co|in|uk|us|de|fr|jp|me|info|xyz|tv|gg|so|sh|ly|to|fm|page|site|blog|wiki|tech)
+                   [ "$host" != "$tld" ] && url="https://$q" ;;
+           esac
+           [ -n "$url" ] || url="https://www.google.com/search?q=$(enc "$q")" ;;
     esac
 fi
 setsid xdg-open "$url" >/dev/null 2>&1 &
