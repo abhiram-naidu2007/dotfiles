@@ -16,6 +16,8 @@ pub struct Battery {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Wifi {
+    /// A cable is plugged in and connected; the bar shows the wired icon then.
+    pub wired: bool,
     pub enabled: bool,
     pub ssid: String,
     pub strength: i32,
@@ -179,6 +181,14 @@ fn wifi_read(conn: &Connection) -> zbus::Result<Wifi> {
     let nm = plain(conn, "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager", "org.freedesktop.NetworkManager")?;
     let enabled: bool = nm.get_property("WirelessEnabled").unwrap_or(false);
     let devices: Vec<zbus::zvariant::OwnedObjectPath> = nm.call("GetDevices", &()).unwrap_or_default();
+    // ethernet (type 1) in state 100 = activated
+    let mut wired = false;
+    for d in &devices {
+        let dev = plain(conn, "org.freedesktop.NetworkManager", d.as_str(), "org.freedesktop.NetworkManager.Device")?;
+        if dev.get_property::<u32>("DeviceType").unwrap_or(0) == 1 && dev.get_property::<u32>("State").unwrap_or(0) == 100 {
+            wired = true;
+        }
+    }
     for d in devices {
         let dev = plain(conn, "org.freedesktop.NetworkManager", d.as_str(), "org.freedesktop.NetworkManager.Device")?;
         if dev.get_property::<u32>("DeviceType").unwrap_or(0) != 2 {
@@ -187,19 +197,19 @@ fn wifi_read(conn: &Connection) -> zbus::Result<Wifi> {
         let wl = plain(conn, "org.freedesktop.NetworkManager", d.as_str(), "org.freedesktop.NetworkManager.Device.Wireless")?;
         let ap: zbus::zvariant::OwnedObjectPath = wl.get_property("ActiveAccessPoint")?;
         if ap.as_str() == "/" {
-            return Ok(Wifi { enabled, ssid: String::new(), strength: 0 });
+            return Ok(Wifi { wired, enabled, ssid: String::new(), strength: 0 });
         }
         let app = plain(conn, "org.freedesktop.NetworkManager", ap.as_str(), "org.freedesktop.NetworkManager.AccessPoint")?;
         let ssid: Vec<u8> = app.get_property("Ssid").unwrap_or_default();
         let strength: u8 = app.get_property("Strength").unwrap_or(0);
-        return Ok(Wifi { enabled, ssid: String::from_utf8_lossy(&ssid).into_owned(), strength: strength as i32 });
+        return Ok(Wifi { wired, enabled, ssid: String::from_utf8_lossy(&ssid).into_owned(), strength: strength as i32 });
     }
-    Ok(Wifi { enabled, ssid: String::new(), strength: 0 })
+    Ok(Wifi { wired, enabled, ssid: String::new(), strength: 0 })
 }
 
 fn wifi(w: &Waker) -> zbus::Result<()> {
     let conn = Connection::system()?;
-    let events = changes(&conn, "org.freedesktop.NetworkManager")?;
+    let events = changes("org.freedesktop.NetworkManager")?;
     let mut last = wifi_read(&conn)?;
     w.send(Msg::Wifi(last.clone()));
     for _ in events {

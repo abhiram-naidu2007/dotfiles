@@ -38,6 +38,7 @@ pub enum Act {
     NotifAction(u32, String),
     NotifClear,
     Dnd,
+    NightLight,
     CalShift(i32),
     Power(&'static str),
     Record,
@@ -83,6 +84,15 @@ pub struct Ui<'a> {
     pub hits: Vec<Hit>,
     pub hover: u64,
     pub alpha: f32,
+    /// How far the hover highlight has faded in on `hover`, and out on `prev` (0..1).
+    pub hover_k: f32,
+    pub prev: u64,
+    pub prev_k: f32,
+    /// Hover strength of the last `hit`; `hv` and the hover fills use it.
+    pub k: f32,
+    /// The control just clicked and its flash, fading from 1 to 0.
+    pub press: u64,
+    pub press_k: f32,
 }
 
 pub fn key_of(a: &Act) -> u64 {
@@ -107,11 +117,30 @@ impl<'a> Ui<'a> {
 
     pub fn hit(&mut self, r: IRect, act: Act) -> bool {
         let key = key_of(&act);
-        let hot = key == self.hover && act != Act::None;
+        self.k = if act == Act::None {
+            0.0
+        } else if key == self.hover {
+            self.hover_k
+        } else if key == self.prev {
+            self.prev_k
+        } else {
+            0.0
+        };
         if act != Act::None {
+            if key == self.press && self.press_k > 0.01 {
+                // click flash over the control
+                let rad = 12.0f32.min(r.h as f32 / 2.0);
+                let c = self.th.fg.alpha(0.16 * self.press_k);
+                self.rect(r.x as f32, r.y as f32, r.w as f32, r.h as f32, rad, c);
+            }
             self.hits.push(Hit { rect: r, act, key, track: None });
         }
-        hot
+        self.k > 0.0
+    }
+
+    /// `hot` faded in by the hover strength of the last `hit`, over `cold`.
+    pub fn hv(&self, hot: Rgba, cold: Rgba) -> Rgba {
+        cold.mix(hot, self.k)
     }
 
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, fill: Rgba) {
@@ -179,7 +208,8 @@ impl<'a> Ui<'a> {
         let hot = self.hit(back, Act::Back);
         let (fg, hv) = (self.th.fg, self.th.hover);
         if hot {
-            self.rect(self.x, self.y, 30.0, 30.0, 15.0, hv);
+            let c = hv.alpha(self.k);
+            self.rect(self.x, self.y, 30.0, 30.0, 15.0, c);
         }
         self.glyph_center("\u{f004d}", 14.0, self.x + 15.0, cy, fg);
         let st = self.txt(self.size - 2.0, 700);
@@ -188,7 +218,8 @@ impl<'a> Ui<'a> {
             let rx = self.x + self.w - 30.0;
             let hot = self.hit(IRect::new(rx as i32, self.y as i32, 30, 30), act);
             if hot {
-                self.rect(rx, self.y, 30.0, 30.0, 15.0, hv);
+                let c = hv.alpha(self.k);
+                self.rect(rx, self.y, 30.0, 30.0, 15.0, c);
             }
             self.glyph_center(g, 14.0, rx + 15.0, cy, fg);
         }
@@ -197,7 +228,8 @@ impl<'a> Ui<'a> {
 
     pub fn card(&mut self, x: f32, y: f32, w: f32, h: f32, active: bool, hot: bool) {
         let th = self.th;
-        let fill = if active { th.on.alpha(0.18) } else if hot { th.fg.alpha(0.10) } else { th.fg.alpha(0.055) };
+        let k = if hot { self.k } else { 0.0 };
+        let fill = if active { th.on.alpha(0.18) } else { th.fg.alpha(0.055).mix(th.fg.alpha(0.10), k) };
         self.rect(x, y, w, h, 14.0, fill);
         self.stroke(x, y, w, h, 14.0, if active { th.on.alpha(0.45) } else { th.line });
     }
@@ -208,7 +240,8 @@ impl<'a> Ui<'a> {
         let hot = self.hit(IRect::new(x as i32, y as i32, w as i32, h as i32), act);
         let th = self.th;
         if active || hot {
-            self.rect(x, y, w, h, 12.0, if active { th.on.alpha(0.14) } else { th.hover });
+            let c = if active { th.on.alpha(0.14) } else { th.hover.alpha(self.k) };
+            self.rect(x, y, w, h, 12.0, c);
         }
         let cy = y + h / 2.0;
         self.glyph(glyph, 15.0, x + 12.0, cy, if active { th.on } else { th.fg });

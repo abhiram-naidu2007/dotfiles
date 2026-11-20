@@ -53,6 +53,18 @@ impl Rgba {
         Self { a: self.a * a, ..self }
     }
 
+    /// Blend towards `o` by `t` (0 = self, 1 = o), in premultiplied alpha so a fade from
+    /// transparent keeps the hue of `o` instead of passing through black.
+    pub fn mix(self, o: Self, t: f32) -> Self {
+        let t = t.clamp(0.0, 1.0);
+        let a = self.a + (o.a - self.a) * t;
+        if a <= 0.0 {
+            return Self { a: 0.0, ..o };
+        }
+        let ch = |x: f32, y: f32| (x * self.a + (y * o.a - x * self.a) * t) / a;
+        Self { r: ch(self.r, o.r), g: ch(self.g, o.g), b: ch(self.b, o.b), a }
+    }
+
     pub fn darker(self, f: f32) -> Self {
         Self { r: self.r / f, g: self.g / f, b: self.b / f, a: self.a }
     }

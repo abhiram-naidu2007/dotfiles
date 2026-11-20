@@ -49,7 +49,7 @@ pub struct Media {
     pub at: Option<Instant>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Notif {
     pub id: u32,
     pub app: String,
@@ -57,6 +57,9 @@ pub struct Notif {
     pub body: String,
     pub critical: bool,
     pub time: String,
+    /// Unix seconds of arrival, for the "5m ago" label.
+    #[serde(default)]
+    pub stamp: i64,
     pub actions: Vec<(String, String)>,
 }
 

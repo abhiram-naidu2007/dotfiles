@@ -14,6 +14,7 @@ const EDGE: f32 = 8.0;
 const GAP: f32 = 8.0;
 const ICON_FONT: &str = "JetBrainsMono Nerd Font";
 
+#[derive(Clone, Copy)]
 struct Colors {
     bg: Rgba,
     line: Rgba,
@@ -36,6 +37,29 @@ struct Colors {
 }
 
 impl Colors {
+    fn mix(self, o: Self, t: f32) -> Self {
+        Self {
+            bg: self.bg.mix(o.bg, t),
+            line: self.line.mix(o.line, t),
+            line_hot: self.line_hot.mix(o.line_hot, t),
+            text1: self.text1.mix(o.text1, t),
+            text2: self.text2.mix(o.text2, t),
+            on: self.on.mix(o.on, t),
+            on2: self.on2.mix(o.on2, t),
+            on_text: self.on_text.mix(o.on_text, t),
+            warn: self.warn.mix(o.warn, t),
+            crit: self.crit.mix(o.crit, t),
+            ok: self.ok.mix(o.ok, t),
+            red: self.red.mix(o.red, t),
+            bryellow: self.bryellow.mix(o.bryellow, t),
+            text3: self.text3.mix(o.text3, t),
+            faint: self.faint.mix(o.faint, t),
+            blue: self.blue.mix(o.blue, t),
+            magenta: self.magenta.mix(o.magenta, t),
+            cyan: self.cyan.mix(o.cyan, t),
+        }
+    }
+
     fn from(t: &Theme) -> Self {
         let p = &t.pal;
         Self {
@@ -167,6 +191,9 @@ struct Spec {
 pub struct Bar {
     theme: Theme,
     col: Colors,
+    /// Colours before the last world or mood change, faded out over 300 ms.
+    col_from: Colors,
+    col_t: Tween,
     width: f32,
     workspaces: Vec<i32>,
     pub focused: i32,
@@ -194,6 +221,8 @@ impl Bar {
         Self {
             theme,
             col,
+            col_from: col,
+            col_t: Tween::fixed(1.0),
             width: width as f32,
             workspaces: Vec::new(),
             focused: -1,
@@ -244,9 +273,12 @@ impl Bar {
         }
         self.focused = id;
         let (dur, ease) = (self.dur(), self.theme.world.ease);
+        // stretch: the new workspace grows at full speed, the others shrink 1.5x slower,
+        // so for a moment the marker spans both and shows the direction of travel
         for w in self.workspaces.clone() {
             let t = self.ws_target(w);
-            self.ws_w.entry(w).or_insert_with(|| Tween::fixed(t)).set(t, now, dur, ease);
+            let d = if w == id { dur } else { dur.mul_f32(1.5) };
+            self.ws_w.entry(w).or_insert_with(|| Tween::fixed(t)).set(t, now, d, ease);
         }
         self.dirty = true;
     }
@@ -363,9 +395,9 @@ impl Bar {
             out.push(Spec { fill: c.bg, border: wd.border, pad: 12.0, spacing: 0.0, parts: interleave(parts), hits: vec![(Hit::Stats, None)] });
         }
         if let Some(wf) = &self.wifi {
-            let g = if !wf.enabled { "\u{f092e}" } else if wf.ssid.is_empty() { "\u{f092b}" }
+            let g = if wf.wired { "\u{f0200}" } else if !wf.enabled { "\u{f092e}" } else if wf.ssid.is_empty() { "\u{f092b}" }
                 else if wf.strength > 66 { "\u{f0928}" } else if wf.strength > 33 { "\u{f0925}" } else { "\u{f091f}" };
-            let gc = if !wf.enabled || wf.ssid.is_empty() { c.crit } else { c.text1 };
+            let gc = if !wf.wired && (!wf.enabled || wf.ssid.is_empty()) { c.crit } else { c.text1 };
             out.push(Spec { fill: c.bg, border: wd.border, pad: self.pad(), spacing: 8.0, parts: vec![Part::Glyph(g, 15.0, gc)], hits: vec![(Hit::Wifi, None)] });
         }
         if let Some(b) = &self.bt {
@@ -425,7 +457,11 @@ impl Bar {
     }
 
     pub fn set_theme(&mut self, theme: Theme) {
+        let now = Instant::now();
+        self.col_from = self.col_at(now);
         self.col = Colors::from(&theme);
+        self.col_t = Tween::fixed(0.0);
+        self.col_t.set(1.0, now, Duration::from_millis(300), crate::anim::Ease::InOutSine);
         self.theme = theme;
         self.ws_w.clear();
         self.dirty = true;
@@ -447,7 +483,11 @@ impl Bar {
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        self.ws_w.values().any(|t| t.running(now))
+        self.ws_w.values().any(|t| t.running(now)) || self.col_t.running(now)
+    }
+
+    fn col_at(&self, now: Instant) -> Colors {
+        if self.col_t.running(now) { self.col_from.mix(self.col, self.col_t.value(now)) } else { self.col }
     }
 
     pub fn needs_frame(&self, now: Instant) -> bool {
@@ -487,6 +527,15 @@ impl Bar {
     }
 
     pub fn render(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, icons: &mut crate::icons::Icons, now: Instant) -> IRect {
+        // during a colour cross-fade, draw with the blended colours, then put the target back
+        let target = self.col;
+        self.col = self.col_at(now);
+        let r = self.render_inner(pm, fonts, icons, now);
+        self.col = target;
+        r
+    }
+
+    fn render_inner(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, icons: &mut crate::icons::Icons, now: Instant) -> IRect {
         let full = IRect::new(0, 0, pm.width() as i32, pm.height() as i32);
         canvas::clear(pm, full);
         self.hits.clear();

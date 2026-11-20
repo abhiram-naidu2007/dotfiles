@@ -82,6 +82,9 @@ struct App {
     pointer: bool,
     low_warned: u8,
     launch_until: Option<Instant>,
+    /// Last slider drag: audio reports that arrive within 400 ms keep the dragged value,
+    /// so the knob does not jump back while PipeWire catches up.
+    held: Option<Instant>,
 }
 
 impl App {
@@ -101,6 +104,19 @@ impl App {
         self.isl.set_hidden(f.fullscreen, now);
     }
 
+    /// Night light for this minute: the schedule while on, neutral when off.
+    fn night_light(&self) {
+        use chrono::Timelike;
+        let c = &self.m.cfg;
+        let s = if c.night_light {
+            let t = chrono::Local::now();
+            crate::gamma::strength(t.hour() * 60 + t.minute(), c.night_from, c.night_to)
+        } else {
+            0.0
+        };
+        crate::gamma::apply(s, c.night_k);
+    }
+
     fn tick_clock(&mut self) {
         let t = chrono::Local::now();
         let fmt = match (self.m.cfg.clock24, self.m.cfg.seconds) {
@@ -110,6 +126,7 @@ impl App {
             (false, true) => "%-I:%M:%S",
         };
         self.m.clock = t.format(fmt).to_string();
+        self.night_light();
         self.m.date = t.format("%A, %-d %B").to_string();
         self.isl.date = self.m.date.clone();
         self.isl.mark();
@@ -461,21 +478,29 @@ impl App {
             Act::NotifAction(id, key) => {
                 notify::invoke(id, &key);
                 self.m.notifs.retain(|n| n.id != id);
+                notify::save(&self.m.notifs);
                 self.isl.close(now);
             }
             Act::NotifDismiss(id) => {
                 self.m.notifs.retain(|n| n.id != id);
                 notify::closed(id, 2);
+                notify::save(&self.m.notifs);
             }
             Act::NotifClear => {
                 for n in std::mem::take(&mut self.m.notifs) {
                     notify::closed(n.id, 2);
                 }
+                notify::save(&self.m.notifs);
             }
             Act::Dnd => {
                 self.m.dnd = !self.m.dnd;
                 self.m.cfg.dnd = self.m.dnd;
                 self.m.cfg.save();
+            }
+            Act::NightLight => {
+                self.m.cfg.night_light = !self.m.cfg.night_light;
+                self.m.cfg.save();
+                self.night_light();
             }
             Act::LiveToggle => rice(&["live", "toggle"]),
             Act::MoodToggle => rice(&["mode", "next"]),
@@ -570,6 +595,9 @@ impl App {
     }
 
     fn slider(&mut self, s: Slider, v: f32, step: bool) {
+        if !step {
+            self.held = Some(Instant::now());
+        }
         match s {
             Slider::Volume => {
                 if step {
@@ -649,6 +677,7 @@ impl App {
                 }
             }
             "dnd" => self.act(Act::Dnd, now),
+            "nightlight" => self.act(Act::NightLight, now),
             "recordToggle" => self.act(Act::Record, now),
             "worldNext" => {
                 let cur = WORLDS.iter().position(|w| *w == self.m.world).unwrap_or(0);
@@ -732,7 +761,28 @@ impl App {
                 self.m.bt_devs = d;
                 self.m.bt_scanning = false;
             }
-            Msg::Audio(a) => {
+            Msg::Audio(mut a) => {
+                // a new default output (headphones plugged in, Bluetooth connected): say which
+                let was = self.m.sinks.iter().find(|d| d.default).map(|d| d.label.clone());
+                let is = a.sinks.iter().find(|d| d.default).map(|d| d.label.clone());
+                if let (Some(w), Some(i)) = (&was, &is)
+                    && w != i {
+                        self.isl.show(island::Toast::plain("\u{f02cb}", "Now using", i, None, now + Duration::from_millis(2500)), now);
+                    }
+                if self.held.is_some_and(|t| now.saturating_duration_since(t) < Duration::from_millis(400)) {
+                    if let (Some(o), Some(p)) = (a.out.as_mut(), self.m.vol) {
+                        o.level = p.level;
+                        o.muted = p.muted;
+                    }
+                    if let (Some(o), Some(p)) = (a.mic.as_mut(), self.m.mic) {
+                        o.level = p.level;
+                    }
+                    for s in a.streams.iter_mut() {
+                        if let Some(p) = self.m.streams.iter().find(|x| x.index == s.index) {
+                            s.level = p.level;
+                        }
+                    }
+                }
                 if let (Some(o), Some(prev)) = (a.out, self.m.vol) {
                     let moved = (o.level - prev.level).abs() > 0.004 || o.muted != prev.muted;
                     if moved && !self.isl.expanded {
@@ -796,6 +846,7 @@ impl App {
                 if self.m.notifs.len() > 50 {
                     self.m.notifs.remove(0);
                 }
+                notify::save(&self.m.notifs);
                 if !self.m.dnd || n.critical {
                     let secs = if n.critical { 10 } else if timeout > 0 { (timeout as u64 / 1000).clamp(2, 10) } else { self.m.cfg.toast_secs };
                     let action = n.actions.iter().find(|(k, _)| k != "default").cloned();
@@ -814,7 +865,10 @@ impl App {
                     }, now);
                 }
             }
-            Msg::NotifClose(id) => self.m.notifs.retain(|n| n.id != id),
+            Msg::NotifClose(id) => {
+                self.m.notifs.retain(|n| n.id != id);
+                notify::save(&self.m.notifs);
+            }
             Msg::Ipc(l) => self.ipc(&l, now),
             Msg::Rec(r) => self.m.rec = r,
             Msg::Resumed => {
@@ -1039,6 +1093,7 @@ pub fn run() -> x11::Result<()> {
     services::start(&hub);
     let cfg = crate::config::Config::load();
     let m = model::Model {
+        notifs: notify::load(),
         rec_sys: true,
         dnd: cfg.dnd,
         cfg,
@@ -1074,6 +1129,7 @@ pub fn run() -> x11::Result<()> {
         pointer: false,
         low_warned: 0,
         launch_until: None,
+        held: None,
     };
     spawn(&IDLE);
     let mut stats = stats::Stats::new();

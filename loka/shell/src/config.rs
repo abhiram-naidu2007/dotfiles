@@ -14,11 +14,16 @@ pub struct Config {
     pub toast_secs: u64,
     pub dnd: bool,
     pub term_opacity: u8,
+    /// Night light: on/off, the daily window (hours) and the warmth in kelvin.
+    pub night_light: bool,
+    pub night_from: u8,
+    pub night_to: u8,
+    pub night_k: u32,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { clock24: true, seconds: false, sounds: true, toast_secs: 5, dnd: false, term_opacity: 90 }
+        Self { clock24: true, seconds: false, sounds: true, toast_secs: 5, dnd: false, term_opacity: 90, night_light: false, night_from: 20, night_to: 7, night_k: 3400 }
     }
 }
 

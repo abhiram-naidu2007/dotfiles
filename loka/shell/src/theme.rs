@@ -55,8 +55,9 @@ impl World {
             skew: if s { -0.28 } else { 0.0 },
             lift: t,
             lacquer: k,
-            dur_ms: if m { 110 } else if k { 360 } else if s { 170 } else { 300 },
-            ease: if m { Ease::Linear } else if k { Ease::InOutSine } else if s { Ease::OutBack(2.2) } else { Ease::OutElastic },
+            // Meridian and Sakuga slow into place and never pass it; Katha sways, Toon bounces
+            dur_ms: if m { 180 } else if k { 360 } else if s { 220 } else { 300 },
+            ease: if m || s { Ease::OutQuint } else if k { Ease::InOutSine } else { Ease::OutElastic },
             labels: if m {
                 ["SYS", "MEM", "GPU"]
             } else if s {
@@ -147,6 +148,19 @@ pub struct Island {
 }
 
 impl Island {
+    /// Blend towards `o` by `t`, for the colour cross-fade when the world or mood changes.
+    pub fn mix(self, o: Self, t: f32) -> Self {
+        Self {
+            bg: self.bg.mix(o.bg, t),
+            fg: self.fg.mix(o.fg, t),
+            on: self.on.mix(o.on, t),
+            crit: self.crit.mix(o.crit, t),
+            muted: self.muted.mix(o.muted, t),
+            line: self.line.mix(o.line, t),
+            hover: self.hover.mix(o.hover, t),
+        }
+    }
+
     pub fn from(t: &Theme) -> Self {
         let h = |s: &str| Rgba::hex(s).unwrap_or(Rgba::new(1.0, 1.0, 1.0, 1.0));
         let (mut bg, mut fg, mut on, mut crit) = match t.world.id {

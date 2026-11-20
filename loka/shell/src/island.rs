@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use tiny_skia::{FillRule, PathBuilder, Pixmap, Transform};
 
-use crate::anim::{Ease, Tween};
+use crate::anim::{self, Ease, Spring, Tween};
 use crate::canvas::{self, IRect};
 use crate::dot;
 use crate::model::Model;
@@ -57,17 +57,27 @@ pub enum Ev {
 
 pub struct Island {
     pub pal: Pal,
+    /// Palette before the last theme change, faded out over 300 ms.
+    pal_from: Pal,
+    pal_t: Tween,
+    /// The page shown before `go`, cross-faded out while the new one fades in.
+    old: Option<(Pixmap, f32)>,
+    swap: Tween,
     pub theme: Theme,
     pub expanded: bool,
     pub page: &'static str,
-    w: Tween,
-    h: Tween,
+    w: Spring,
+    h: Spring,
     fade: Tween,
     content: Pixmap,
     content_h: f32,
     content_dirty: bool,
     pub hits: Vec<Hit>,
     hover: u64,
+    /// Hover highlight: fades in on `hover`, out on `prev_hover`.
+    hover_k: Tween,
+    prev_hover: u64,
+    prev_k: Tween,
     drag: Option<Hit>,
     dirty: bool,
     pub osd: Option<(&'static str, f32, bool, Instant)>,
@@ -86,10 +96,18 @@ pub struct Island {
     pub focus: Option<u64>,
     hidden: bool,
     stow: Tween,
+    /// When the pointer came onto a toast: the toast does not expire while it is read.
+    toast_pause: Option<Instant>,
+    press_key: u64,
+    press_t: Tween,
+    /// Notifications waiting for the toast slot: (toast, how long it shows, arrival).
+    queue: std::collections::VecDeque<(Toast, Duration, Instant)>,
 }
 
-fn ease() -> Ease {
-    Ease::OutBack(1.15)
+/// The pill and the panel move on springs: about 0.42 s, a slight swing past the target
+/// (damping 0.82). Reopening while it closes keeps the speed it has.
+fn spring(v: f32) -> Spring {
+    Spring::new(v, 0.42, 0.82)
 }
 
 impl Island {
@@ -97,17 +115,24 @@ impl Island {
         let pal = Pal::from(&theme);
         Self {
             pal,
+            pal_from: pal,
+            pal_t: Tween::fixed(1.0),
+            old: None,
+            swap: Tween::fixed(1.0),
             theme,
             expanded: false,
             page: "main",
-            w: Tween::fixed(96.0),
-            h: Tween::fixed(PILL_H),
+            w: spring(96.0),
+            h: spring(PILL_H),
             fade: Tween::fixed(0.0),
             content: Pixmap::new(PANEL_W as u32, SURF_H as u32 - 40).expect("content buffer"),
             content_h: 0.0,
             content_dirty: true,
             hits: Vec::new(),
             hover: 0,
+            hover_k: Tween::fixed(0.0),
+            prev_hover: 0,
+            prev_k: Tween::fixed(0.0),
             drag: None,
             dirty: true,
             osd: None,
@@ -126,6 +151,10 @@ impl Island {
             focus: None,
             hidden: false,
             stow: Tween::fixed(0.0),
+            toast_pause: None,
+            press_key: 0,
+            press_t: Tween::fixed(0.0),
+            queue: std::collections::VecDeque::new(),
         }
     }
 
@@ -145,7 +174,11 @@ impl Island {
     }
 
     pub fn set_theme(&mut self, t: Theme) {
+        let now = Instant::now();
+        self.pal_from = self.pal_at(now);
         self.pal = Pal::from(&t);
+        self.pal_t = Tween::fixed(0.0);
+        self.pal_t.set(1.0, now, Duration::from_millis(300), Ease::InOutSine);
         self.theme = t;
         self.content_dirty = true;
         self.dirty = true;
@@ -157,7 +190,24 @@ impl Island {
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        self.w.running(now) || self.h.running(now) || self.fade.running(now) || self.flip.running(now) || self.stow.running(now)
+        self.w.running(now) || self.h.running(now) || self.fade.running(now) || self.flip.running(now) || self.stow.running(now) || self.hovering(now) || self.pal_t.running(now) || self.swap.running(now)
+    }
+
+    fn hovering(&self, now: Instant) -> bool {
+        self.expanded && (self.hover_k.running(now) || self.prev_k.running(now) || self.press_t.running(now))
+    }
+
+    fn set_hover(&mut self, key: u64, now: Instant) {
+        if key == self.hover {
+            return;
+        }
+        self.prev_k = Tween::fixed(self.hover_k.value(now));
+        self.prev_k.go(0.0, now, anim::FADE);
+        self.prev_hover = self.hover;
+        self.hover_k = Tween::fixed(0.0);
+        self.hover_k.go(1.0, now, anim::FADE);
+        self.hover = key;
+        self.mark();
     }
 
     pub fn needs_frame(&self, now: Instant) -> bool {
@@ -169,10 +219,16 @@ impl Island {
         if let Some((_, _, _, at)) = self.osd {
             t = Some(at);
         }
-        if let Some(to) = &self.toast {
-            t = Some(t.map_or(to.until, |x| x.min(to.until)));
-        }
+        if let Some(to) = &self.toast
+            && self.toast_pause.is_none() {
+                t = Some(t.map_or(to.until, |x| x.min(to.until)));
+            }
         if let Some(at) = self.rearm_at {
+            t = Some(t.map_or(at, |x| x.min(at)));
+        }
+        if self.toast.is_none() && !self.expanded && !self.queue.is_empty() {
+            // a short breath after the panel closes before the next toast
+            let at = now + Duration::from_millis(260);
             t = Some(t.map_or(at, |x| x.min(at)));
         }
         t.map(|x| x.max(now))
@@ -189,10 +245,12 @@ impl Island {
                 self.retarget(now);
             }
         if let Some(Toast { until: at, .. }) = &self.toast
+            && self.toast_pause.is_none()
             && now >= *at {
                 self.toast = None;
                 self.retarget(now);
             }
+        self.next_toast(now);
         if clock != self.clock {
             if !self.clock.is_empty() {
                 self.prev_clock = std::mem::take(&mut self.clock);
@@ -220,20 +278,30 @@ impl Island {
         (dot::width(&self.clock, 14.0) + 36.0, PILL_H)
     }
 
+    /// Growing uses the open spring (a slight swing); shrinking a quicker one that lands
+    /// without passing the target, so closing feels snappier than opening.
+    fn size_to(&mut self, w: f32, h: f32, now: Instant) {
+        for (s, to) in [(&mut self.w, w), (&mut self.h, h)] {
+            if to >= s.value(now) {
+                s.set_with(to, now, 0.42, 0.82);
+            } else {
+                s.set_with(to, now, 0.30, 1.0);
+            }
+        }
+    }
+
     fn retarget(&mut self, now: Instant) {
-        let d = Duration::from_millis(300);
         if self.expanded {
-            self.w.set(PANEL_W, now, d, ease());
-            self.h.set((self.content_h + PAD * 2.0).min(SURF_H as f32 - 2.0), now, d, ease());
-            self.fade.set(1.0, now, Duration::from_millis(180), Ease::OutCubic);
+            let h = (self.content_h + PAD * 2.0).min(SURF_H as f32 - 2.0);
+            self.size_to(PANEL_W, h, now);
+            self.fade.go(1.0, now, anim::FADE);
         } else {
             let (w, h) = self.collapsed_size();
-            self.w.set(w, now, d, ease());
-            self.h.set(h, now, d, ease());
-            self.fade.set(0.0, now, Duration::from_millis(120), Ease::OutCubic);
+            self.size_to(w, h, now);
+            self.fade.go(0.0, now, anim::FADE);
         }
         let stow = if self.stowed() { 1.0 } else { 0.0 };
-        self.stow.set(stow, now, Duration::from_millis(260), Ease::OutCubic);
+        self.stow.go(stow, now, anim::SLOW);
         self.dirty = true;
     }
 
@@ -252,6 +320,11 @@ impl Island {
 
     pub fn go(&mut self, page: &'static str, now: Instant) {
         self.focus = None;
+        if self.expanded && page != self.page {
+            self.old = Some((self.content.clone(), self.content_h));
+            self.swap = Tween::fixed(0.0);
+            self.swap.set(1.0, now, Duration::from_millis(200), Ease::OutCubic);
+        }
         self.page = page;
         self.content_dirty = true;
         self.retarget(now);
@@ -284,14 +357,66 @@ impl Island {
         if self.hidden && !t.force {
             return;
         }
-        if self.expanded && t.notif.is_none() {
-            self.close(now);
+        if t.notif.is_some() {
+            // the same notification again: update it where it is
+            if let Some(cur) = self.toast.as_mut().filter(|c| c.notif == t.notif) {
+                *cur = t;
+                self.dirty = true;
+                return;
+            }
+            if let Some((q, ..)) = self.queue.iter_mut().find(|(q, ..)| q.notif == t.notif) {
+                *q = t;
+                return;
+            }
+            // a notification is showing, or the panel is open: wait for the slot. A
+            // critical one goes first. The one on screen gets 2 s more at most, so a burst
+            // moves along instead of piling up.
+            let busy = self.expanded || self.toast.as_ref().is_some_and(|c| c.notif.is_some());
+            if busy {
+                let dur = t.until.saturating_duration_since(now);
+                if t.force {
+                    // ahead of ordinary ones, behind earlier critical ones
+                    let at = self.queue.iter().position(|(q, ..)| !q.force).unwrap_or(self.queue.len());
+                    self.queue.insert(at, (t, dur, now));
+                } else {
+                    self.queue.push_back((t, dur, now));
+                }
+                while self.queue.len() > 8 {
+                    self.queue.pop_back();
+                }
+                if let Some(cur) = self.toast.as_mut() {
+                    cur.until = cur.until.min(now + Duration::from_secs(2));
+                }
+                self.dirty = true;
+                return;
+            }
         } else if self.expanded {
-            return;
+            self.close(now);
         }
         self.peek = false;
         self.toast = Some(t);
         self.retarget(now);
+    }
+
+    /// Next waiting notification into the empty slot; ones older than 60 s are dropped.
+    fn next_toast(&mut self, now: Instant) {
+        if self.toast.is_some() || self.expanded || self.osd.is_some() {
+            return;
+        }
+        while let Some((mut t, dur, at)) = self.queue.pop_front() {
+            if now.saturating_duration_since(at) > Duration::from_secs(60) {
+                continue;
+            }
+            if self.hidden && !t.force {
+                continue;
+            }
+            t.until = now + dur.max(Duration::from_secs(3));
+            self.peek = false;
+            self.toast = Some(t);
+            self.toast_pause = None;
+            self.retarget(now);
+            return;
+        }
     }
 
     fn panel_rect(&self, now: Instant) -> (f32, f32, f32) {
@@ -344,6 +469,12 @@ impl Island {
             hits: Vec::new(),
             hover: self.hover,
             alpha: 1.0,
+            hover_k: self.hover_k.value(now),
+            prev: self.prev_hover,
+            prev_k: self.prev_k.value(now),
+            k: 0.0,
+            press: self.press_key,
+            press_k: self.press_t.value(now),
         };
         crate::pages::draw(self.page, &mut ui, m, now);
         self.content_h = ui.y;
@@ -351,7 +482,34 @@ impl Island {
         self.content_dirty = false;
     }
 
+    fn pal_at(&self, now: Instant) -> Pal {
+        if self.pal_t.running(now) { self.pal_from.mix(self.pal, self.pal_t.value(now)) } else { self.pal }
+    }
+
     pub fn render(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, m: &Model, now: Instant) -> IRect {
+        // during a colour cross-fade, draw with the blended palette, then put the target back
+        let fading = self.pal_t.running(now);
+        if fading {
+            self.content_dirty = true;
+        }
+        if !self.swap.running(now) {
+            self.old = None;
+        }
+        let target = self.pal;
+        self.pal = self.pal_at(now);
+        let r = self.render_inner(pm, fonts, m, now);
+        self.pal = target;
+        if fading {
+            // the next frame redraws the content with the next blend
+            self.content_dirty = true;
+        }
+        r
+    }
+
+    fn render_inner(&mut self, pm: &mut Pixmap, fonts: &mut Fonts, m: &Model, now: Instant) -> IRect {
+        if self.hovering(now) {
+            self.content_dirty = true;
+        }
         if self.content_dirty && self.expanded {
             let before = self.content_h;
             let t0 = Instant::now();
@@ -380,7 +538,13 @@ impl Island {
             if vis > 0 {
                 let rows = vis.min(self.content_h.ceil() as u32 + 2);
                 let ox = (x + (w - PANEL_W) / 2.0) as i32;
-                canvas::blit_clip(pm, &self.content, ox, PAD as i32, rows, fade, (x + 8.0) as i32, (x + w - 8.0) as i32);
+                let s = self.swap.value(now).clamp(0.0, 1.0);
+                if let Some((old, oh)) = &self.old {
+                    let orows = vis.min(oh.ceil() as u32 + 2);
+                    canvas::blit_clip(pm, old, ox, PAD as i32, orows, fade * (1.0 - s), (x + 8.0) as i32, (x + w - 8.0) as i32);
+                }
+                let k = if self.old.is_some() { s } else { 1.0 };
+                canvas::blit_clip(pm, &self.content, ox, PAD as i32, rows, fade * k, (x + 8.0) as i32, (x + w - 8.0) as i32);
                 if let Some(k) = self.focus
                     && let Some(hit) = self.hits.iter().find(|h| h.key == k)
                 {
@@ -430,6 +594,14 @@ impl Island {
             canvas::fill_round(pm, x + 12.0, cy - 16.0, 32.0, 32.0, 16.0, p.fg.alpha(0.10), Transform::identity());
             let gw = fonts.measure(&to.glyph, &st);
             fonts.draw(pm, &to.glyph, &st, x + 28.0 - gw / 2.0, cy, p.fg, None);
+            if !self.queue.is_empty() {
+                // "+N": more notifications wait behind this one
+                let ns = crate::text::TextStyle::new("JetBrainsMono Nerd Font", 9.0, 800);
+                let s = format!("+{}", self.queue.len());
+                let nw = fonts.measure(&s, &ns) + 8.0;
+                canvas::fill_round(pm, x + 38.0 - nw / 2.0, cy + 6.0, nw, 13.0, 6.5, p.fg, Transform::identity());
+                fonts.draw(pm, &s, &ns, x + 38.0 - nw / 2.0 + 4.0, cy + 12.5, p.bg, None);
+            }
             let right_w = if to.action.is_some() { 96.0 } else if to.ring.is_some() { 44.0 } else { 0.0 };
             let tw = w - 66.0 - right_w - 14.0;
             if !to.label.is_empty() {
@@ -499,7 +671,11 @@ impl Island {
 
     pub fn motion(&mut self, x: f32, y: f32, now: Instant) -> Option<Ev> {
         if !self.expanded {
-            if self.peek || self.toast.is_some() || self.osd.is_some() {
+            if self.toast.is_some() {
+                self.toast_pause.get_or_insert(now);
+                return None;
+            }
+            if self.peek || self.osd.is_some() {
                 return None;
             }
             let start = *self.enter_pt.get_or_insert((x, y));
@@ -522,14 +698,16 @@ impl Island {
                 return Some(Ev::Set(*s, v));
             }
         let key = self.hits.iter().rev().find(|h| h.rect.contains(lx, ly)).map(|h| h.key).unwrap_or(0);
-        if key != self.hover {
-            self.hover = key;
-            self.mark();
-        }
+        self.set_hover(key, now);
         None
     }
 
     pub fn leave_at(&mut self, now: Instant) {
+        if let Some(p) = self.toast_pause.take()
+            && let Some(to) = &mut self.toast {
+                // the time read is given back, and at least 1.5 s to move away
+                to.until = (to.until + (now - p)).max(now + Duration::from_millis(1500));
+            }
         self.enter_pt = None;
         if self.peek {
             self.peek = false;
@@ -537,19 +715,23 @@ impl Island {
             self.rearm_at = Some(now + Duration::from_millis(450));
             self.retarget(now);
         }
-        self.leave();
+        self.leave(now);
     }
 
-    pub fn leave(&mut self) {
-        if self.hover != 0 {
-            self.hover = 0;
-            self.mark();
-        }
+    pub fn leave(&mut self, now: Instant) {
+        self.set_hover(0, now);
     }
 
     pub fn press(&mut self, x: f32, y: f32, button: u8, now: Instant) -> Option<Ev> {
         let (px, w, h) = self.panel_rect(now);
         if !self.expanded {
+            // middle click dismisses a toast without opening anything
+            if x >= px && x <= px + w && y <= h && button == 2 && self.toast.is_some() {
+                self.toast = None;
+                self.toast_pause = None;
+                self.retarget(now);
+                return None;
+            }
             if x >= px && x <= px + w && y <= h && button == 1 {
                 if let Some(to) = self.toast.take() {
                     self.retarget(now);
@@ -584,6 +766,10 @@ impl Island {
             self.drag = Some(hit);
             return Some(Ev::Set(s, v));
         }
+        self.press_key = hit.key;
+        self.press_t = Tween::fixed(1.0);
+        self.press_t.set(0.0, now, Duration::from_millis(350), Ease::OutCubic);
+        self.content_dirty = true;
         Some(Ev::Act(hit.act))
     }
 

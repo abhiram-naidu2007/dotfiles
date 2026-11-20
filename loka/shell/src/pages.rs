@@ -3,7 +3,7 @@ use std::time::Instant;
 use chrono::{Datelike, Local, NaiveDate};
 use tiny_skia::{PixmapPaint, Transform};
 
-use crate::canvas::{IRect, Rgba};
+use crate::canvas::IRect;
 use crate::dot;
 use crate::model::Model;
 use crate::ui::{Act, Slider, Ui};
@@ -50,6 +50,16 @@ fn vol_glyph(level: f32, muted: bool) -> &'static str {
     }
 }
 
+/// Time since a notification arrived: "now", "5m", "2h", then the clock time.
+fn age(n: &crate::model::Notif, now: i64) -> String {
+    match now - n.stamp {
+        s if s < 60 => "now".into(),
+        s if s < 3600 => format!("{}m", s / 60),
+        s if s < 6 * 3600 => format!("{}h", s / 3600),
+        _ => n.time.clone(),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn tile(ui: &mut Ui, x: f32, y: f32, w: f32, glyph: &str, title: &str, sub: &str, on: bool, act: Act, toggle: Act) {
     let h = 60.0;
@@ -57,7 +67,7 @@ fn tile(ui: &mut Ui, x: f32, y: f32, w: f32, glyph: &str, title: &str, sub: &str
     ui.card(x, y, w, h, false, hot);
     let th = ui.th;
     let thot = ui.hit(IRect::new((x + 8.0) as i32, (y + 10.0) as i32, 40, 40), toggle);
-    let circ = if on { th.on } else if thot { th.fg.alpha(0.2) } else { th.fg.alpha(0.12) };
+    let circ = if on { th.on } else if thot { ui.hv(th.fg.alpha(0.2), th.fg.alpha(0.12)) } else { th.fg.alpha(0.12) };
     ui.rect(x + 10.0, y + 12.0, 36.0, 36.0, 18.0, circ);
     ui.glyph_center(glyph, 16.0, x + 28.0, y + 30.0, if on { th.fg_on(th.on) } else { th.fg });
     let ts = ui.txt(ui.size - 3.0, 700);
@@ -76,13 +86,15 @@ fn main(ui: &mut Ui, m: &Model, now: Instant) {
     let ds = ui.txt(ui.size - 3.0, 500);
     ui.text(&m.date, &ds, x + cw + 16.0, y0 + 12.0, th.fg);
     let ls = ui.txt(ui.size - 5.0, 400);
-    let hot = ui.hit(IRect::new((x + cw + 12.0) as i32, (y0 + 20.0) as i32, 90, 18), Act::Page("cal"));
-    ui.text("Calendar", &ls, x + cw + 16.0, y0 + 29.0, if hot { th.on } else { th.muted });
+    ui.hit(IRect::new((x + cw + 12.0) as i32, (y0 + 20.0) as i32, 90, 18), Act::Page("cal"));
+    let c = ui.hv(th.on, th.muted);
+    ui.text("Calendar", &ls, x + cw + 16.0, y0 + 29.0, c);
     let bx = x + w - 3.0 * 36.0;
     for (i, (g, act)) in [("\u{f009a}", Act::Page("notif")), ("\u{f014c}", Act::Page("clip")), ("\u{f0493}", Act::Page("settings"))].into_iter().enumerate() {
         let bxi = bx + i as f32 * 36.0;
-        let hot = ui.hit(IRect::new(bxi as i32, (y0 + 4.0) as i32, 32, 32), act);
-        ui.rect(bxi, y0 + 4.0, 32.0, 32.0, 16.0, if hot { th.hover } else { th.fg.alpha(0.06) });
+        ui.hit(IRect::new(bxi as i32, (y0 + 4.0) as i32, 32, 32), act);
+        let c = ui.hv(th.hover, th.fg.alpha(0.06));
+        ui.rect(bxi, y0 + 4.0, 32.0, 32.0, 16.0, c);
         ui.glyph_center(g, 15.0, bxi + 16.0, y0 + 20.0, th.fg);
         if i == 0 && !m.notifs.is_empty() {
             ui.rect(bxi + 22.0, y0 + 4.0, 10.0, 10.0, 5.0, th.on);
@@ -141,9 +153,10 @@ fn main(ui: &mut Ui, m: &Model, now: Instant) {
         let cx = x + w - 118.0;
         for (i, (g, a)) in [("\u{f04ae}", "prev"), (if md.playing { "\u{f03e4}" } else { "\u{f040a}" }, "play"), ("\u{f04ad}", "next")].into_iter().enumerate() {
             let bx = cx + i as f32 * 36.0;
-            let hot = ui.hit(IRect::new(bx as i32, (y + 16.0) as i32, 32, 32), Act::Media(a));
+            ui.hit(IRect::new(bx as i32, (y + 16.0) as i32, 32, 32), Act::Media(a));
             let main = a == "play";
-            ui.rect(bx, y + 16.0, 32.0, 32.0, 16.0, if main { th.fg } else if hot { th.hover } else { Rgba::new(0.0, 0.0, 0.0, 0.0) });
+            let c = if main { th.fg } else { th.hover.alpha(ui.k) };
+            ui.rect(bx, y + 16.0, 32.0, 32.0, 16.0, c);
             ui.glyph_center(g, 15.0, bx + 16.0, y + 32.0, if main { th.bg } else { th.fg });
         }
         let pos = if md.length_us > 0 {
@@ -205,8 +218,9 @@ fn main(ui: &mut Ui, m: &Model, now: Instant) {
         ui.text("TRAY", &ls, x + 2.0, y + 16.0, th.muted);
         let mut bx = x + 52.0;
         for it in items {
-            let hot = ui.hit(IRect::new(bx as i32, y as i32, 32, 32), Act::TrayOpen(it.key.clone(), (bx + 16.0) as i32));
-            ui.rect(bx, y, 32.0, 32.0, 10.0, if hot { th.hover } else { th.fg.alpha(0.06) });
+            ui.hit(IRect::new(bx as i32, y as i32, 32, 32), Act::TrayOpen(it.key.clone(), (bx + 16.0) as i32));
+            let c = ui.hv(th.hover, th.fg.alpha(0.06));
+            ui.rect(bx, y, 32.0, 32.0, 10.0, c);
             if let Some(icon) = &it.icon {
                 ui.pm.draw_pixmap((bx + 8.0) as i32, (y + 8.0) as i32, icon.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
             }
@@ -240,8 +254,9 @@ fn wifi(ui: &mut Ui, m: &Model) {
             let dots: String = "•".repeat(m.pw_text.chars().count());
             ui.text_max(&dots, &st, x + 36.0, y + h / 2.0, th.fg, w - 90.0);
         }
-        let hot = ui.hit(IRect::new((x + w - 44.0) as i32, (y + 6.0) as i32, 36, 32), Act::WifiConnectTyped);
-        ui.rect(x + w - 44.0, y + 6.0, 36.0, 32.0, 10.0, if m.pw_text.is_empty() { th.fg.alpha(0.1) } else if hot { th.fg } else { th.on });
+        ui.hit(IRect::new((x + w - 44.0) as i32, (y + 6.0) as i32, 36, 32), Act::WifiConnectTyped);
+        let c = if m.pw_text.is_empty() { th.fg.alpha(0.1) } else { ui.hv(th.fg, th.on) };
+        ui.rect(x + w - 44.0, y + 6.0, 36.0, 32.0, 10.0, c);
         ui.glyph_center("\u{f0054}", 13.0, x + w - 26.0, y + 22.0, th.fg_on(th.on));
         ui.y = y + h + 8.0;
     }
@@ -261,8 +276,9 @@ fn wifi(ui: &mut Ui, m: &Model) {
         if n.known && !n.connected {
             let rh = ui.y - start_y - 2.0;
             let fx = x + w - 36.0;
-            let hot = ui.hit(IRect::new(fx as i32, (start_y + rh / 2.0 - 14.0) as i32, 28, 28), Act::WifiForget(n.ssid.clone()));
-            ui.glyph_center("\u{f0156}", 13.0, fx + 14.0, start_y + rh / 2.0, if hot { th.crit } else { th.muted });
+            ui.hit(IRect::new(fx as i32, (start_y + rh / 2.0 - 14.0) as i32, 28, 28), Act::WifiForget(n.ssid.clone()));
+            let c = ui.hv(th.crit, th.muted);
+            ui.glyph_center("\u{f0156}", 13.0, fx + 14.0, start_y + rh / 2.0, c);
         }
     }
 }
@@ -376,8 +392,9 @@ fn calendar(ui: &mut Ui, m: &Model) {
     ui.header(&title, Some(("\u{f0142}", Act::CalShift(1))));
     let th = ui.th;
     let (x, w) = (ui.x, ui.w);
-    let hot = ui.hit(IRect::new((x + w - 64.0) as i32, (ui.y - 40.0) as i32, 30, 30), Act::CalShift(-1));
-    ui.glyph_center("\u{f0141}", 14.0, x + w - 49.0, ui.y - 25.0, if hot { th.on } else { th.fg });
+    ui.hit(IRect::new((x + w - 64.0) as i32, (ui.y - 40.0) as i32, 30, 30), Act::CalShift(-1));
+    let c = ui.hv(th.on, th.fg);
+    ui.glyph_center("\u{f0141}", 14.0, x + w - 49.0, ui.y - 25.0, c);
     let cw = w / 7.0;
     let hs = ui.txt(ui.size - 5.0, 700);
     for (i, d) in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].iter().enumerate() {
@@ -422,7 +439,34 @@ fn notifications(ui: &mut Ui, m: &Model) {
         return;
     }
     let th = ui.th;
-    for n in m.notifs.iter().rev().take(10) {
+    // grouped by app, the app with the newest notification first; three per app, then a count
+    let mut apps: Vec<&str> = Vec::new();
+    for n in m.notifs.iter().rev() {
+        if !apps.contains(&n.app.as_str()) {
+            apps.push(&n.app);
+        }
+    }
+    let mut shown = 0;
+    for app in apps {
+        if shown >= 10 {
+            break;
+        }
+        let all: Vec<&crate::model::Notif> = m.notifs.iter().rev().filter(|n| n.app == app).collect();
+        for n in all.iter().take(3) {
+            notif_card(ui, n);
+            shown += 1;
+        }
+        if all.len() > 3 {
+            let st = ui.txt(ui.size - 5.0, 500);
+            ui.text(&format!("+{} more from {}", all.len() - 3, app), &st, ui.x + 12.0, ui.y + 4.0, th.muted);
+            ui.y += 22.0;
+        }
+    }
+}
+
+fn notif_card(ui: &mut Ui, n: &crate::model::Notif) {
+    let th = ui.th;
+    {
         let (x, w) = (ui.x, ui.w);
         let y = ui.y;
         let body_lines = if n.body.is_empty() { 0.0 } else { 1.0 };
@@ -431,9 +475,10 @@ fn notifications(ui: &mut Ui, m: &Model) {
         let as_ = ui.txt(ui.size - 6.0, 700).tracking(0.6);
         ui.text_max(&n.app.to_uppercase(), &as_, x + 12.0, y + 14.0, th.muted, w - 110.0);
         let ts = ui.txt(ui.size - 6.0, 400);
-        ui.text_right(&n.time, &ts, x + w - 40.0, y + 14.0, th.muted);
-        let hot = ui.hit(IRect::new((x + w - 34.0) as i32, (y + 2.0) as i32, 28, 24), Act::NotifDismiss(n.id));
-        ui.glyph_center("\u{f0156}", 12.0, x + w - 20.0, y + 14.0, if hot { th.crit } else { th.muted });
+        ui.text_right(&age(n, chrono::Local::now().timestamp()), &ts, x + w - 40.0, y + 14.0, th.muted);
+        ui.hit(IRect::new((x + w - 34.0) as i32, (y + 2.0) as i32, 28, 24), Act::NotifDismiss(n.id));
+        let c = ui.hv(th.crit, th.muted);
+        ui.glyph_center("\u{f0156}", 12.0, x + w - 20.0, y + 14.0, c);
         let ss = ui.txt(ui.size - 3.0, 700);
         ui.text_max(&n.summary, &ss, x + 12.0, y + 33.0, th.fg, w - 24.0);
         if !n.body.is_empty() {
@@ -480,7 +525,8 @@ fn clipboard(ui: &mut Ui, m: &Model) {
             let h = 60.0;
             let hot = ui.hit(IRect::new(x as i32, start as i32, w as i32, h as i32), Act::ClipCopy(id));
             if hot {
-                ui.rect(x, start, w, h, 12.0, th.hover);
+                let c = th.hover.alpha(ui.k);
+                ui.rect(x, start, w, h, 12.0, c);
             }
             if let Some(t) = m.clip_thumbs.get(&id) {
                 let ty = start + (h - t.height().min(52) as f32) / 2.0;
@@ -497,8 +543,9 @@ fn clipboard(ui: &mut Ui, m: &Model) {
             ui.row("\u{f0192}", text, "", "    ", false, Act::ClipCopy(id));
         }
         let rh = ui.y - start - 2.0;
-        let hot = ui.hit(IRect::new((x + w - 36.0) as i32, (start + rh / 2.0 - 14.0) as i32, 28, 28), Act::ClipDelete(id));
-        ui.glyph_center("\u{f0156}", 12.0, x + w - 22.0, start + rh / 2.0, if hot { th.crit } else { th.muted });
+        ui.hit(IRect::new((x + w - 36.0) as i32, (start + rh / 2.0 - 14.0) as i32, 28, 28), Act::ClipDelete(id));
+        let c = ui.hv(th.crit, th.muted);
+        ui.glyph_center("\u{f0156}", 12.0, x + w - 22.0, start + rh / 2.0, c);
     }
 }
 
@@ -598,6 +645,7 @@ fn settings(ui: &mut Ui, m: &Model) {
     ui.label("System");
     ui.toggle("Sound effects", "\u{f057e}", m.cfg.sounds, Act::Sounds);
     ui.toggle("Coffee mode", "\u{f0176}", m.coffee, Act::Coffee);
+    ui.toggle(&format!("Night light {:02}:00–{:02}:00", m.cfg.night_from, m.cfg.night_to), "\u{f0594}", m.cfg.night_light, Act::NightLight);
 }
 
 fn dur(secs: i64) -> String {
@@ -708,7 +756,8 @@ fn wall_card(ui: &mut Ui, m: &Model) {
         ui.rect(tx, ty, tw, tht, 8.0, th.fg.alpha(0.08));
     }
     if hot {
-        ui.rect(tx, ty, tw, tht, 8.0, th.fg.alpha(0.12));
+        let c = th.fg.alpha(0.12 * ui.k);
+        ui.rect(tx, ty, tw, tht, 8.0, c);
     }
     let moving = m.scene != "picture" && (m.live == "on" || m.live == "always");
     let world = { let mut c = m.world.chars(); c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default() };
@@ -732,7 +781,7 @@ fn wall_card(ui: &mut Ui, m: &Model) {
     for (i, (g, on, act, enabled)) in btns.into_iter().enumerate() {
         let cx = bx + i as f32 * (bw + 8.0);
         let hot = enabled && ui.hit(IRect::new(cx as i32, by as i32, bw as i32, bw as i32), act);
-        let fill = if on { th.on } else if hot { th.hover } else { th.fg.alpha(0.07) };
+        let fill = if on { th.on } else if hot { ui.hv(th.hover, th.fg.alpha(0.07)) } else { th.fg.alpha(0.07) };
         ui.rect(cx, by, bw, bw, 12.0, fill);
         ui.glyph_center(g, 16.0, cx + bw / 2.0, by + bw / 2.0, if on { th.fg_on(th.on) } else if enabled { th.fg } else { th.muted });
     }

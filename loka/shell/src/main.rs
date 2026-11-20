@@ -6,6 +6,7 @@ mod canvas;
 mod clip;
 mod config;
 mod dot;
+mod gamma;
 mod i3;
 mod icons;
 mod ipc;

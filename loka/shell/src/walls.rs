@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
-use crate::anim::{Ease, Tween};
+use crate::anim::{self, Spring, Tween};
 use crate::canvas::{self, IRect};
 use crate::config::home;
 use crate::text::{Fonts, TextStyle};
@@ -28,7 +28,7 @@ pub struct Walls {
     world: WorldId,
     items: Vec<Item>,
     index: usize,
-    pos: Tween,
+    pos: Spring,
     fade: Tween,
     current: String,
     cache: HashMap<String, Pixmap>,
@@ -102,7 +102,7 @@ impl Walls {
             world: WorldId::Meridian,
             items: Vec::new(),
             index: 0,
-            pos: Tween::fixed(0.0),
+            pos: Spring::new(0.0, 0.38, 1.0),
             fade: Tween::fixed(0.0),
             current: String::new(),
             cache: HashMap::new(),
@@ -118,7 +118,7 @@ impl Walls {
     pub fn show(&mut self, world: WorldId, now: Instant) {
         self.open = true;
         self.fade = Tween::fixed(0.0);
-        self.fade.set(1.0, now, Duration::from_millis(200), Ease::OutCubic);
+        self.fade.go(1.0, now, anim::FADE);
         self.islands = islands();
         self.load(world);
         if self.outline.is_none() {
@@ -151,7 +151,7 @@ impl Walls {
         self.items = items;
         self.loading = false;
         self.index = self.items.iter().position(|i| i.path == self.current).unwrap_or(0);
-        self.pos = Tween::fixed(self.index as f32);
+        self.pos.snap(self.index as f32);
         self.dirty = true;
     }
 
@@ -165,7 +165,7 @@ impl Walls {
         }
         let n = self.items.len() as i32;
         self.index = (self.index as i32 + d).clamp(0, n - 1) as usize;
-        self.pos.set(self.index as f32, now, Duration::from_millis(360), Ease::OutCubic);
+        self.pos.set(self.index as f32, now);
         self.dirty = true;
     }
 

@@ -47,6 +47,7 @@ impl Server {
             body: strip_markup(&body),
             critical: urgency >= 2,
             time: chrono::Local::now().format("%H:%M").to_string(),
+            stamp: chrono::Local::now().timestamp(),
             actions: actions.chunks(2).filter(|c| c.len() == 2).map(|c| (c[0].clone(), c[1].clone())).collect(),
         };
         self.w.send(Msg::Notify(n, expire_timeout));
@@ -92,6 +93,37 @@ fn emit<B: serde::Serialize + zbus::zvariant::DynamicType>(member: &str, body: &
 pub fn invoke(id: u32, key: &str) {
     emit("ActionInvoked", &(id, key));
     closed(id, 2);
+}
+
+fn history_path() -> std::path::PathBuf {
+    let base = std::env::var_os("XDG_STATE_HOME").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/state"));
+    base.join("loka/notifications.json")
+}
+
+/// Keep the history across restarts (newest 50).
+pub fn save(list: &[Notif]) {
+    let p = history_path();
+    let _ = std::fs::create_dir_all(p.parent().unwrap_or(&p));
+    let start = list.len().saturating_sub(50);
+    if let Ok(s) = serde_json::to_string(&list[start..]) {
+        let tmp = p.with_extension("tmp");
+        if std::fs::write(&tmp, s).is_ok() {
+            let _ = std::fs::rename(tmp, p);
+        }
+    }
+}
+
+/// History from the last run. The apps that sent these are gone, so actions are dropped,
+/// and ids move to a high range where they cannot clash with the ids this run hands out.
+pub fn load() -> Vec<Notif> {
+    let Ok(s) = std::fs::read_to_string(history_path()) else { return Vec::new() };
+    let mut v: Vec<Notif> = serde_json::from_str(&s).unwrap_or_default();
+    for (i, n) in v.iter_mut().enumerate() {
+        n.id = 0x8000_0000 + i as u32;
+        n.actions.clear();
+    }
+    v
 }
 
 pub fn closed(id: u32, reason: u32) {
