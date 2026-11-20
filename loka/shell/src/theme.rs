@@ -11,6 +11,8 @@ pub enum WorldId {
     Katha,
     Sakuga,
     Toon,
+    /// Ink: pure black and white, one seal-red accent, sharp corners.
+    Sumi,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,31 +45,32 @@ pub struct World {
 impl World {
     pub fn get(id: WorldId) -> Self {
         let (m, k, s, t) = (id == WorldId::Meridian, id == WorldId::Katha, id == WorldId::Sakuga, id == WorldId::Toon);
+        let u = id == WorldId::Sumi;
         World {
             id,
             display: if m { "JetBrainsMono Nerd Font" } else if k { "Ramaraja" } else if t { "Rounded Mplus 1c" } else { "Inter Tight" },
             text: if m { "JetBrainsMono Nerd Font" } else if k { "Anek Telugu" } else if t { "Rounded Mplus 1c" } else { "Inter Tight" },
-            text_weight: if m { 500 } else if s || t { 700 } else { 600 },
-            tracking: if m { 1.4 } else if s { 0.4 } else { 0.0 },
-            pill_h: if t { 32.0 } else if s { 28.0 } else { 30.0 },
-            radius: if m { 3.0 } else if s { 2.0 } else if t { 16.0 } else { 15.0 },
-            border: if s { 0.0 } else if t { 2.0 } else { 1.0 },
+            text_weight: if m { 500 } else if s || t || u { 700 } else { 600 },
+            tracking: if m { 1.4 } else if s { 0.4 } else if u { 1.0 } else { 0.0 },
+            pill_h: if t { 32.0 } else if s || u { 28.0 } else { 30.0 },
+            radius: if m { 3.0 } else if s { 2.0 } else if u { 0.0 } else if t { 16.0 } else { 15.0 },
+            border: if s { 0.0 } else if t || u { 2.0 } else { 1.0 },
             skew: if s { -0.28 } else { 0.0 },
             lift: t,
             lacquer: k,
             // Meridian and Sakuga slow into place and never pass it; Katha sways, Toon bounces
-            dur_ms: if m { 180 } else if k { 360 } else if s { 220 } else { 300 },
-            ease: if m || s { Ease::OutQuint } else if k { Ease::InOutSine } else { Ease::OutElastic },
+            dur_ms: if m { 180 } else if k { 360 } else if s || u { 220 } else { 300 },
+            ease: if m || s || u { Ease::OutQuint } else if k { Ease::InOutSine } else { Ease::OutElastic },
             labels: if m {
                 ["SYS", "MEM", "GPU"]
-            } else if s {
+            } else if s || u {
                 ["CPU", "RAM", "GPU"]
             } else if t {
                 ["\u{f04c5}", "\u{f035b}", "\u{f08ae}"]
             } else {
                 ["\u{f035b}", "\u{f061a}", "\u{f08ae}"]
             },
-            workspace: if m { WsStyle::Dash } else if k { WsStyle::Akshara } else if s { WsStyle::Slash } else { WsStyle::Bubble },
+            workspace: if m || u { WsStyle::Dash } else if k { WsStyle::Akshara } else if s { WsStyle::Slash } else { WsStyle::Bubble },
         }
     }
 
@@ -121,6 +124,7 @@ impl Theme {
             "katha" => WorldId::Katha,
             "sakuga" => WorldId::Sakuga,
             "toon" => WorldId::Toon,
+            "sumi" => WorldId::Sumi,
             _ => WorldId::Meridian,
         };
         Theme { world: World::get(id), pal: Palette { map } }
@@ -168,6 +172,7 @@ impl Island {
             WorldId::Sakuga => (h("#0a0b10"), h("#f4f6fa"), h("#e23a42"), h("#ff4d57")),
             WorldId::Katha => (h("#0e1440"), h("#f6ebd3"), h("#e8b04a"), h("#e2553f")),
             WorldId::Toon => (h("#2a2244"), h("#fff5e4"), h("#ffd45c"), h("#ff7a8a")),
+            WorldId::Sumi => (h("#000000"), h("#f2f2f2"), h("#ffffff"), h("#c8102e")),
         };
         let p = &t.pal;
         if p.raw("accent").is_some() {

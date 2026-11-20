@@ -106,6 +106,7 @@ enum Hit {
     Tray(usize),
     Rec,
     Power,
+    Title,
 }
 
 enum Part {
@@ -378,13 +379,15 @@ impl Bar {
             let glyphs = wd.labels_are_glyphs();
             let lst = self.txt(11.0, 700);
             let vst = self.txt(13.0, wd.text_weight).tnum(true);
-            let tints = [c.blue, c.magenta, c.cyan];
+            // Sumi is ink only: grey labels, white when busy, seal red when critical
+            let mono = wd.id == crate::theme::WorldId::Sumi;
+            let tints = if mono { [c.text2; 3] } else { [c.blue, c.magenta, c.cyan] };
             let mut parts = Vec::new();
             for (i, (&v, tint)) in self.stats.iter().zip(tints).enumerate() {
                 if v < 0 {
                     continue;
                 }
-                let lc = if v >= 90 { c.crit } else if v >= 70 { c.warn } else { tint };
+                let lc = if v >= 90 { c.crit } else if v >= 70 { if mono { c.text1 } else { c.warn } } else { tint };
                 if glyphs {
                     parts.push(Part::Glyph(wd.labels[i], 14.0, lc));
                 } else {
@@ -419,13 +422,15 @@ impl Bar {
             out.push(Spec { fill: c.bg, border: wd.border, pad: self.pad(), spacing: 7.0, parts, hits: vec![(Hit::Volume, None)] });
         }
         if let Some((pct, charging)) = self.battery {
-            let hp = if charging { c.ok } else if pct <= 20 { c.crit } else if pct <= 50 { c.warn } else { c.ok };
+            let hp = if wd.id == crate::theme::WorldId::Sumi {
+                if pct <= 20 && !charging { c.crit } else { c.text1 }
+            } else if charging { c.ok } else if pct <= 20 { c.crit } else if pct <= 50 { c.warn } else { c.ok };
             let mut parts = Vec::new();
             if wd.id != crate::theme::WorldId::Katha {
                 parts.push(Part::Text("HP".into(), self.txt(11.0, 700), c.text2, 0.0));
             }
             parts.push(match wd.id {
-                crate::theme::WorldId::Meridian => Part::Blocks(pct, hp, c.faint),
+                crate::theme::WorldId::Meridian | crate::theme::WorldId::Sumi => Part::Blocks(pct, hp, c.faint),
                 crate::theme::WorldId::Toon => Part::Hearts(pct, if pct <= 20 { c.crit } else { c.red }, c.text3),
                 crate::theme::WorldId::Katha => Part::Lamp(pct, if charging { c.on } else if pct <= 20 { c.crit } else { c.bryellow }, c.on),
                 crate::theme::WorldId::Sakuga => Part::Meter(pct, hp, c.faint),
@@ -624,6 +629,7 @@ impl Bar {
                 fonts.draw(pm, glyph, &gst, x + 13.0, cy, self.col.on2, None);
             }
             fonts.draw_elided(pm, &shown, &tst, x + 13.0 + gw + 8.0, cy, self.col.text1, tw);
+            self.hits.push((IRect::new(x as i32, TOP as i32, bw as i32, h as i32), Hit::Title));
         }
 
         let mut specs = self.right_specs();
@@ -760,6 +766,7 @@ impl Bar {
                 None
             }
             (Some(Hit::Power), 1 | 3) => Some(Click::Page("power")),
+            (Some(Hit::Title), 1) => Some(Click::Page("window")),
             (Some(Hit::Rec), 1) => Some(Click::Page("record")),
             (Some(Hit::Rec), 3) => Some(Click::Record),
             (Some(Hit::Stats | Hit::Battery), 1) => Some(Click::Page("main")),

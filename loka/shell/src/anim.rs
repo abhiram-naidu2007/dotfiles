@@ -194,6 +194,10 @@ impl Spring {
         self.eps = (self.d0.abs() * 0.002).max(1e-3);
     }
 
+    pub fn target(&self) -> f32 {
+        self.to
+    }
+
     /// Jump to `v` with no motion.
     pub fn snap(&mut self, v: f32) {
         self.to = v;

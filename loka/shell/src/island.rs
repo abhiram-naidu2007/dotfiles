@@ -13,6 +13,8 @@ use crate::ui::{Act, Hit, Slider, Ui};
 pub const SURF_W: u16 = 600;
 pub const SURF_H: u16 = 800;
 const PANEL_W: f32 = 540.0;
+/// Content can be taller than the panel; the rest is reached by scrolling.
+const CONTENT_H: u32 = 2000;
 const PILL_H: f32 = 38.0;
 const FLARE: f32 = 12.0;
 const PAD: f32 = 18.0;
@@ -98,6 +100,11 @@ pub struct Island {
     stow: Tween,
     /// When the pointer came onto a toast: the toast does not expire while it is read.
     toast_pause: Option<Instant>,
+    /// A toast being dragged sideways: where the press started, and the offset (springs back).
+    swipe: Option<f32>,
+    swipe_dx: Tween,
+    /// How far the panel content is scrolled (px), on a spring.
+    scroll: Spring,
     press_key: u64,
     press_t: Tween,
     /// Notifications waiting for the toast slot: (toast, how long it shows, arrival).
@@ -125,7 +132,7 @@ impl Island {
             w: spring(96.0),
             h: spring(PILL_H),
             fade: Tween::fixed(0.0),
-            content: Pixmap::new(PANEL_W as u32, SURF_H as u32 - 40).expect("content buffer"),
+            content: Pixmap::new(PANEL_W as u32, CONTENT_H).expect("content buffer"),
             content_h: 0.0,
             content_dirty: true,
             hits: Vec::new(),
@@ -152,6 +159,9 @@ impl Island {
             hidden: false,
             stow: Tween::fixed(0.0),
             toast_pause: None,
+            swipe: None,
+            swipe_dx: Tween::fixed(0.0),
+            scroll: Spring::new(0.0, 0.35, 1.0),
             press_key: 0,
             press_t: Tween::fixed(0.0),
             queue: std::collections::VecDeque::new(),
@@ -190,7 +200,7 @@ impl Island {
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        self.w.running(now) || self.h.running(now) || self.fade.running(now) || self.flip.running(now) || self.stow.running(now) || self.hovering(now) || self.pal_t.running(now) || self.swap.running(now)
+        self.w.running(now) || self.h.running(now) || self.fade.running(now) || self.flip.running(now) || self.stow.running(now) || self.hovering(now) || self.pal_t.running(now) || self.swap.running(now) || self.scroll.running(now) || self.swipe_dx.running(now)
     }
 
     fn hovering(&self, now: Instant) -> bool {
@@ -307,6 +317,7 @@ impl Island {
 
     pub fn open(&mut self, page: &'static str, now: Instant) {
         self.peek = false;
+        self.scroll.snap(0.0);
         self.focus = None;
         if self.expanded && self.page == page {
             self.close(now);
@@ -320,6 +331,7 @@ impl Island {
 
     pub fn go(&mut self, page: &'static str, now: Instant) {
         self.focus = None;
+        self.scroll.snap(0.0);
         if self.expanded && page != self.page {
             self.old = Some((self.content.clone(), self.content_h));
             self.swap = Tween::fixed(0.0);
@@ -536,7 +548,8 @@ impl Island {
         if fade > 0.01 && (self.expanded || self.fade.running(now)) {
             let vis = (h - PAD).max(0.0) as u32;
             if vis > 0 {
-                let rows = vis.min(self.content_h.ceil() as u32 + 2);
+                let sy = self.scroll.value(now).round() as i32;
+                let rows = vis.min((self.content_h.ceil() as i32 + 2 - sy).max(0) as u32);
                 let ox = (x + (w - PANEL_W) / 2.0) as i32;
                 let s = self.swap.value(now).clamp(0.0, 1.0);
                 if let Some((old, oh)) = &self.old {
@@ -544,12 +557,19 @@ impl Island {
                     canvas::blit_clip(pm, old, ox, PAD as i32, orows, fade * (1.0 - s), (x + 8.0) as i32, (x + w - 8.0) as i32);
                 }
                 let k = if self.old.is_some() { s } else { 1.0 };
-                canvas::blit_clip(pm, &self.content, ox, PAD as i32, rows, fade * k, (x + 8.0) as i32, (x + w - 8.0) as i32);
+                canvas::blit_clip_from(pm, &self.content, ox, PAD as i32, sy, rows, fade * k, (x + 8.0) as i32, (x + w - 8.0) as i32);
+                let view = vis as f32;
+                if self.content_h > view + 1.0 {
+                    // thin scrollbar on the right edge
+                    let th = (view * view / self.content_h).max(24.0);
+                    let ty = PAD + (view - th) * (sy as f32 / (self.content_h - view)).clamp(0.0, 1.0);
+                    canvas::fill_round(pm, x + w - 7.0, ty, 3.0, th, 1.5, self.pal.fg.alpha(0.25 * fade), Transform::identity());
+                }
                 if let Some(k) = self.focus
                     && let Some(hit) = self.hits.iter().find(|h| h.key == k)
                 {
                     let r = hit.rect;
-                    let (fx, fy) = (ox as f32 + r.x as f32 - 3.0, PAD + r.y as f32 - 3.0);
+                    let (fx, fy) = (ox as f32 + r.x as f32 - 3.0, PAD + r.y as f32 - 3.0 - self.scroll.value(now));
                     if fy + r.h as f32 + 6.0 < h {
                         canvas::stroke_round(pm, fx, fy, r.w as f32 + 6.0, r.h as f32 + 6.0, 13.0, 2.0, self.pal.on.alpha(fade), Transform::identity());
                     }
@@ -588,6 +608,12 @@ impl Island {
             return;
         }
         if let Some(to) = &self.toast {
+            let dx = self.swipe_dx.value(now);
+            let x = x + dx;
+            let a = (1.0 - dx.abs() / (w * 0.5)).clamp(0.15, 1.0);
+            let mut p = p;
+            p.fg = p.fg.alpha(a);
+            p.muted = p.muted.alpha(a);
             let ts = crate::text::TextStyle::new("JetBrainsMono Nerd Font", 13.0, 700);
             let bs = crate::text::TextStyle::new("JetBrainsMono Nerd Font", 11.5, 400);
             let st = crate::text::TextStyle::new(crate::ui::ICON, 16.0, 400);
@@ -673,6 +699,10 @@ impl Island {
         if !self.expanded {
             if self.toast.is_some() {
                 self.toast_pause.get_or_insert(now);
+                if let Some(x0) = self.swipe {
+                    self.swipe_dx = Tween::fixed(x - x0);
+                    self.dirty = true;
+                }
                 return None;
             }
             if self.peek || self.osd.is_some() {
@@ -691,7 +721,7 @@ impl Island {
         }
         let (px, _, _) = self.panel_rect(now);
         let ox = px + (self.w.value(now) - PANEL_W) / 2.0;
-        let (lx, ly) = (x - ox, y - PAD);
+        let (lx, ly) = (x - ox, y - PAD + self.scroll.value(now));
         if let Some(d) = &self.drag
             && let (Act::Slider(s), Some((tx, tw, max))) = (&d.act, d.track) {
                 let v = ((lx - tx) / tw).clamp(0.0, 1.0) * max;
@@ -732,18 +762,13 @@ impl Island {
                 self.retarget(now);
                 return None;
             }
+            if x >= px && x <= px + w && y <= h && button == 1 && self.toast.is_some() {
+                // the click happens on release, unless the toast was dragged away
+                self.swipe = Some(x);
+                self.swipe_dx = Tween::fixed(0.0);
+                return None;
+            }
             if x >= px && x <= px + w && y <= h && button == 1 {
-                if let Some(to) = self.toast.take() {
-                    self.retarget(now);
-                    if let (Some(id), Some((key, _))) = (to.notif, &to.action)
-                        && x >= px + w - 110.0 {
-                            return Some(Ev::Act(Act::NotifAction(id, key.clone())));
-                        }
-                    if let (Some(id), true) = (to.notif, to.default_action) {
-                        return Some(Ev::Act(Act::NotifAction(id, "default".into())));
-                    }
-                    return Some(Ev::Act(if to.notif.is_some() { Act::Page("notif") } else { Act::None }));
-                }
                 return Some(Ev::Act(Act::Page("main")));
             }
             return None;
@@ -752,14 +777,21 @@ impl Island {
             return Some(Ev::Act(Act::Close));
         }
         let ox = px + (w - PANEL_W) / 2.0;
-        let (lx, ly) = (x - ox, y - PAD);
-        let hit = self.hits.iter().rev().find(|h| h.rect.contains(lx, ly))?.clone();
+        let (lx, ly) = (x - ox, y - PAD + self.scroll.value(now));
+        let hit = self.hits.iter().rev().find(|h| h.rect.contains(lx, ly)).cloned();
         if button == 4 || button == 5 {
-            if let Act::Slider(s) = hit.act {
-                return Some(Ev::Step(s, if button == 4 { 0.05 } else { -0.05 }));
+            if let Some(Act::Slider(s)) = hit.as_ref().map(|h| &h.act) {
+                return Some(Ev::Step(*s, if button == 4 { 0.05 } else { -0.05 }));
             }
+            // the wheel elsewhere scrolls the page
+            let view = (SURF_H as f32 - 2.0 - PAD * 2.0).min(self.h.target() - PAD * 2.0);
+            let max = (self.content_h - view).max(0.0);
+            let to = (self.scroll.target() + if button == 4 { -72.0 } else { 72.0 }).clamp(0.0, max);
+            self.scroll.set(to, now);
+            self.dirty = true;
             return None;
         }
+        let hit = hit?;
         if let (Act::Slider(s), Some((tx, tw, max))) = (&hit.act, hit.track) {
             let v = ((lx - tx) / tw).clamp(0.0, 1.0) * max;
             let s = *s;
@@ -818,8 +850,36 @@ impl Island {
         self.hits.iter().find(|h| h.key == k).cloned()
     }
 
-    pub fn release(&mut self) {
+    pub fn release(&mut self, x: f32, now: Instant) -> Option<Ev> {
         self.drag = None;
+        let x0 = self.swipe.take()?;
+        let dx = x - x0;
+        let (px, w, _) = self.panel_rect(now);
+        if dx.abs() > w * 0.35 {
+            // dragged far enough: dismissed
+            self.toast = None;
+            self.toast_pause = None;
+            self.swipe_dx = Tween::fixed(0.0);
+            self.retarget(now);
+            return None;
+        }
+        if dx.abs() >= 6.0 {
+            self.swipe_dx.set(0.0, now, Duration::from_millis(260), Ease::OutCubic);
+            self.dirty = true;
+            return None;
+        }
+        self.swipe_dx = Tween::fixed(0.0);
+        let to = self.toast.take()?;
+        self.toast_pause = None;
+        self.retarget(now);
+        if let (Some(id), Some((key, _))) = (to.notif, &to.action)
+            && x >= px + w - 110.0 {
+                return Some(Ev::Act(Act::NotifAction(id, key.clone())));
+            }
+        if let (Some(id), true) = (to.notif, to.default_action) {
+            return Some(Ev::Act(Act::NotifAction(id, "default".into())));
+        }
+        Some(Ev::Act(if to.notif.is_some() { Act::Page("notif") } else { Act::None }))
     }
 }
 

@@ -36,7 +36,7 @@ pub struct Walls {
     hits: Vec<(IRect, WAct)>,
     dirty: bool,
     loading: bool,
-    islands: [Island; 4],
+    islands: [Island; 5],
     waker: Waker,
 }
 
@@ -48,7 +48,7 @@ pub enum WAct {
     World(WorldId),
 }
 
-const ORDER: [WorldId; 4] = [WorldId::Meridian, WorldId::Sakuga, WorldId::Katha, WorldId::Toon];
+const ORDER: [WorldId; 5] = [WorldId::Meridian, WorldId::Sakuga, WorldId::Sumi, WorldId::Katha, WorldId::Toon];
 
 fn wname(w: WorldId) -> &'static str {
     match w {
@@ -56,6 +56,7 @@ fn wname(w: WorldId) -> &'static str {
         WorldId::Katha => "katha",
         WorldId::Sakuga => "sakuga",
         WorldId::Toon => "toon",
+        WorldId::Sumi => "sumi",
     }
 }
 
@@ -65,10 +66,11 @@ fn title(w: WorldId) -> &'static str {
         WorldId::Katha => "Katha",
         WorldId::Sakuga => "Sakuga",
         WorldId::Toon => "Toon",
+        WorldId::Sumi => "Sumi",
     }
 }
 
-fn islands() -> [Island; 4] {
+fn islands() -> [Island; 5] {
     let mut t = Theme::load();
     ORDER.map(|w| {
         t.world = World::get(w);
@@ -170,7 +172,7 @@ impl Walls {
     }
 
     pub fn world_step(&mut self, d: i32) {
-        self.load(ORDER[(slot(self.world) as i32 + d).rem_euclid(4) as usize]);
+        self.load(ORDER[(slot(self.world) as i32 + d).rem_euclid(ORDER.len() as i32) as usize]);
     }
 
     fn warm_thumb(&mut self, i: usize) {
@@ -203,7 +205,7 @@ impl Walls {
         for wd in ORDER {
             widths.push(fonts.measure(title(wd), &tab_st) + 36.0);
         }
-        let total: f32 = widths.iter().sum::<f32>() + 8.0 * 3.0;
+        let total: f32 = widths.iter().sum::<f32>() + 8.0 * (ORDER.len() as f32 - 1.0);
         let mut tx = (w - total) / 2.0;
         let ty = h / 2.0 - 290.0;
         for (i, wd) in ORDER.into_iter().enumerate() {
@@ -316,6 +318,7 @@ impl Walls {
             "katha" => WorldId::Katha,
             "sakuga" => WorldId::Sakuga,
             "toon" => WorldId::Toon,
+            "sumi" => WorldId::Sumi,
             _ => WorldId::Meridian,
         }
     }

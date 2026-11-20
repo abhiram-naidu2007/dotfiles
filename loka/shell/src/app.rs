@@ -13,7 +13,7 @@ use crate::{audio, bar, clip, i3, icons, ipc, island, model, mpris, notify, serv
 const FRAME: Duration = Duration::from_micros(6944);
 const STATS_EVERY: Duration = Duration::from_secs(3);
 
-const WORLDS: [&str; 4] = ["meridian", "sakuga", "katha", "toon"];
+const WORLDS: [&str; 5] = ["meridian", "sakuga", "sumi", "katha", "toon"];
 const IDLE: [&str; 9] = ["xset", "s", "600", "600", "+dpms", "dpms", "0", "0", "900"];
 
 fn script(name: &str) -> String {
@@ -85,6 +85,8 @@ struct App {
     /// Last slider drag: audio reports that arrive within 400 ms keep the dragged value,
     /// so the knob does not jump back while PipeWire catches up.
     held: Option<Instant>,
+    /// What game mode changed, to put back: (do not disturb, power profile, live wallpaper).
+    game_prev: Option<(bool, String, String)>,
 }
 
 impl App {
@@ -100,6 +102,13 @@ impl App {
     }
 
     fn set_focus(&mut self, f: &i3::Focus, now: Instant) {
+        // the island itself takes no focus; keep the last real window for the window page
+        if f.window != 0 {
+            self.m.win = f.clone();
+            if self.isl.expanded && self.isl.page == "window" {
+                self.isl.mark();
+            }
+        }
         self.bar.set_focus(&f.title, &f.class, f.fullscreen);
         self.isl.set_hidden(f.fullscreen, now);
     }
@@ -467,6 +476,10 @@ impl App {
                 std::thread::spawn(move || clip::copy(id));
                 self.isl.close(now);
             }
+            Act::ClipPin(id) => {
+                clip::pin(id);
+                self.clip_load();
+            }
             Act::ClipDelete(id) => {
                 clip::delete(id);
                 self.clip_load();
@@ -496,6 +509,26 @@ impl App {
                 self.m.dnd = !self.m.dnd;
                 self.m.cfg.dnd = self.m.dnd;
                 self.m.cfg.save();
+            }
+            Act::GameMode => {
+                if let Some((dnd, profile, live)) = self.game_prev.take() {
+                    self.m.game = false;
+                    self.m.dnd = dnd;
+                    let p: &'static str = match profile.as_str() { "power-saver" => "power-saver", "performance" => "performance", _ => "balanced" };
+                    services::set_profile(p);
+                    self.m.profile = p.to_owned();
+                    let live = if live.is_empty() { "on".to_owned() } else { live };
+                    spawn(&["sh", "-c", &format!("~/.config/i3/scripts/compositor.sh; rice live {live}")]);
+                    self.isl.show(island::Toast::plain("\u{f0297}", "Game mode", "Off", None, now + Duration::from_millis(1800)), now);
+                } else {
+                    self.game_prev = Some((self.m.dnd, self.m.profile.clone(), self.m.live.clone()));
+                    self.m.game = true;
+                    self.m.dnd = true;
+                    services::set_profile("performance");
+                    self.m.profile = "performance".into();
+                    spawn(&["sh", "-c", "pkill -x picom; rice live off"]);
+                    self.isl.show(island::Toast::plain("\u{f0297}", "Game mode", "On: compositor and live wallpaper off", None, now + Duration::from_millis(2200)), now);
+                }
             }
             Act::NightLight => {
                 self.m.cfg.night_light = !self.m.cfg.night_light;
@@ -663,6 +696,7 @@ impl App {
             "settings" => "settings",
             "battery" => "battery",
             "record" => "record",
+            "window" => "window",
             "worlds" => "worldwalls",
             _ => "",
         };
@@ -678,6 +712,7 @@ impl App {
             }
             "dnd" => self.act(Act::Dnd, now),
             "nightlight" => self.act(Act::NightLight, now),
+            "gamemode" => self.act(Act::GameMode, now),
             "recordToggle" => self.act(Act::Record, now),
             "worldNext" => {
                 let cur = WORLDS.iter().position(|w| *w == self.m.world).unwrap_or(0);
@@ -1130,6 +1165,7 @@ pub fn run() -> x11::Result<()> {
         low_warned: 0,
         launch_until: None,
         held: None,
+        game_prev: None,
     };
     spawn(&IDLE);
     let mut stats = stats::Stats::new();
@@ -1337,7 +1373,11 @@ pub fn run() -> x11::Result<()> {
                     Some(Ev::Step(s, d)) => app.slider(s, d, true),
                     None => {}
                 },
-                Event::ButtonRelease(e) if e.event == iw => app.isl.release(),
+                Event::ButtonRelease(e) if e.event == iw => {
+                    if let Some(Ev::Act(a)) = app.isl.release(e.event_x as f32, now) {
+                        app.act(a, now);
+                    }
+                }
                 Event::ButtonPress(e) if app.walls_s.as_ref().map(|s| s.win) == Some(e.event) => match e.detail {
                     4 => app.walls.step(-1, now),
                     5 => app.walls.step(1, now),

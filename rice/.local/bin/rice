@@ -23,7 +23,7 @@
 #                            on = a live scene moves while the workspace is empty and the machine is
 #                            on mains; always = also behind windows; off = a still frame of it
 #   rice mode night|paper|next     night = the world's own theme, paper = e-ink reading
-#   rice world meridian|katha|sakuga|toon|next|none [FILE]
+#   rice world meridian|sakuga|sumi|katha|toon|next|none [FILE]
 #                            a loka world: its own hues for every program (the shell, terminal,
 #                            i3, rofi, GTK, Neovim ...) and one of its wallpapers, pictures or
 #                            videos (videos: Meridian only) in ~/dotfiles/wallpaper/NAME (FILE, else the last one used
@@ -50,7 +50,7 @@ PICTURES="$HOME/Pictures/wallpapers"
 WALLS=("$DOT/wallpaper" "$PICTURES")
 SCENE_DIR="$DATA/mathwall/scenes"
 MODES=(night paper)
-WORLDS=(meridian katha sakuga toon)
+WORLDS=(meridian sakuga sumi katha toon)
 LOKA_WALLS="$DOT/wallpaper"
 mkdir -p "$STATE" "$CACHE"
 
@@ -214,15 +214,33 @@ fit_style() {
   done < "$DATA/rice/fit.tsv" 2>/dev/null
   echo extend
 }
+# A picture much larger than the screen (a 4K original) is scaled down once, with Lanczos in
+# linear light and a light sharpen, and kept in the cache: feh's own scaling is softer and
+# shimmers on fine line art.
+scaled() {
+  local src=$1 size=$2 w iw out
+  w=${size%x*}
+  read -r iw _ < <(magick identify -format '%w %h' "$src[0]" 2>/dev/null)
+  [ -n "$iw" ] && [ "$iw" -gt $(( w * 11 / 10 )) ] || { echo "$src"; return; }
+  out="$CACHE/sharp-$size-$(printf '%s' "$src$(stat -c %Y "$src")" | md5sum | cut -c1-12).png"
+  [ -s "$out" ] && { echo "$out"; return; }
+  if magick "$src[0]" -colorspace RGB -filter Lanczos -resize "${size}^" -gravity center -extent "$size" \
+       -colorspace sRGB -unsharp 0x0.6+0.4+0 "$out.tmp.png" 2>/dev/null; then
+    mv "$out.tmp.png" "$out"; echo "$out"
+  else
+    rm -f "$out.tmp.png"; echo "$src"
+  fi
+}
+
 fitted() {
   local src=$1 size w h iw ih out style nw nh gx gy wide
   [ -f "$src" ] || { echo "$src"; return; }
-  case "$(readlink -f "$src")" in "$DOT"/wallpaper/*) echo "$src"; return ;; esac
   size=$(screen_size); w=${size%x*}; h=${size#*x}
+  case "$(readlink -f "$src")" in "$DOT"/wallpaper/*) scaled "$src" "$size"; return ;; esac
   read -r iw ih < <(magick identify -format '%w %h' "$src[0]" 2>/dev/null)
   [ -n "$iw" ] && [ "$iw" -gt 0 ] && [ "$ih" -gt 0 ] || { echo "$src"; return; }
   local off=$(( (iw * h - ih * w) * 100 / (ih * w) ))
-  if [ "$off" -ge -3 ] && [ "$off" -le 3 ]; then echo "$src"; return; fi
+  if [ "$off" -ge -3 ] && [ "$off" -le 3 ]; then scaled "$src" "$size"; return; fi
   style=$(fit_style "$src")
   out="$CACHE/fit-$size-$style-$(printf '%s' "$src$(stat -c %Y "$src")$(stat -c %Y "$DATA/rice/fit.tsv" 2>/dev/null)" | md5sum | cut -c1-12).png"
   [ -s "$out" ] && { echo "$out"; return; }

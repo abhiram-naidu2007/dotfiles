@@ -12,6 +12,67 @@ pub struct Item {
     pub id: u32,
     pub text: String,
     pub image: Option<PathBuf>,
+    /// Pinned items stay on top and survive pruning and "clear".
+    pub pinned: bool,
+    pub kind: Kind,
+}
+
+/// What a text entry looks like, for its icon and how it is drawn.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Kind {
+    Text,
+    Link,
+    /// A hex colour; the value is 0xRRGGBB.
+    Colour(u32),
+    Path,
+    Code,
+    Image,
+}
+
+pub fn kind_of(raw: &str) -> Kind {
+    let t = raw.trim();
+    if let Some(h) = t.strip_prefix('#')
+        && matches!(h.len(), 3 | 6 | 8)
+        && h.chars().all(|c| c.is_ascii_hexdigit())
+    {
+        let full: String = if h.len() == 3 { h.chars().flat_map(|c| [c, c]).collect() } else { h[..6].to_owned() };
+        return Kind::Colour(u32::from_str_radix(&full, 16).unwrap_or(0));
+    }
+    if !t.contains(char::is_whitespace) && (t.starts_with("https://") || t.starts_with("http://")) {
+        return Kind::Link;
+    }
+    if !t.contains('\n') && (t.starts_with('/') || t.starts_with("~/")) && !t.contains(' ') {
+        return Kind::Path;
+    }
+    let marks = [";\n", "{\n", "fn ", "=> ", "def ", "import ", "#include", "const ", "let ", "</", "()"];
+    if t.contains('\n') && marks.iter().filter(|m| t.contains(*m)).count() >= 2 {
+        return Kind::Code;
+    }
+    Kind::Text
+}
+
+fn pins_path() -> PathBuf {
+    dir().join("pins")
+}
+
+fn pins() -> Vec<u32> {
+    std::fs::read_to_string(pins_path()).unwrap_or_default().split_whitespace().filter_map(|s| s.parse().ok()).collect()
+}
+
+fn save_pins(p: &[u32]) {
+    let s: Vec<String> = p.iter().map(|i| i.to_string()).collect();
+    let _ = std::fs::write(pins_path(), s.join("\n"));
+}
+
+/// Pin or unpin an entry.
+pub fn pin(id: u32) {
+    let mut p = pins();
+    if let Some(i) = p.iter().position(|x| *x == id) {
+        p.remove(i);
+    } else {
+        p.push(id);
+    }
+    save_pins(&p);
 }
 
 fn dir() -> PathBuf {
@@ -66,7 +127,8 @@ pub fn store() {
     }
     let id = old.first().map_or(0, |e| e.0) + 1;
     let _ = std::fs::write(d.join(format!("{id}.{kind}")), &data);
-    for (_, p) in entries().into_iter().skip(KEEP) {
+    let pinned = pins();
+    for (_, p) in entries().into_iter().filter(|e| !pinned.contains(&e.0)).skip(KEEP) {
         let _ = std::fs::remove_file(p);
     }
 }
@@ -81,17 +143,23 @@ fn describe(p: &std::path::Path) -> String {
 }
 
 pub fn list() -> Vec<Item> {
-    entries()
-        .into_iter()
+    let pinned = pins();
+    let mut all = entries();
+    // pinned first, each group newest first
+    all.sort_by_key(|e| (!pinned.contains(&e.0), std::cmp::Reverse(e.0)));
+    all.into_iter()
         .take(SHOWN)
         .map(|(id, p)| {
+            let pinned = pinned.contains(&id);
             if ext(&p) != "txt" {
-                return Item { id, text: describe(&p), image: Some(p) };
+                return Item { id, text: describe(&p), image: Some(p), pinned, kind: Kind::Image };
             }
             let mut head = Vec::with_capacity(300);
             let _ = std::fs::File::open(&p).map(|f| f.take(300).read_to_end(&mut head));
-            let text = String::from_utf8_lossy(&head).trim_end_matches('\u{fffd}').split_whitespace().collect::<Vec<_>>().join(" ");
-            Item { id, text, image: None }
+            let raw = String::from_utf8_lossy(&head).trim_end_matches('\u{fffd}').to_string();
+            let kind = kind_of(&raw);
+            let text = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+            Item { id, text, image: None, pinned, kind }
         })
         .collect()
 }
@@ -112,10 +180,31 @@ pub fn delete(id: u32) {
     for (_, p) in entries().into_iter().filter(|e| e.0 == id) {
         let _ = std::fs::remove_file(p);
     }
+    let mut p = pins();
+    p.retain(|x| *x != id);
+    save_pins(&p);
 }
 
+/// Clear the history; pinned entries stay.
 pub fn wipe() {
-    for (_, p) in entries() {
+    let pinned = pins();
+    for (_, p) in entries().into_iter().filter(|e| !pinned.contains(&e.0)) {
         let _ = std::fs::remove_file(p);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kinds() {
+        assert_eq!(kind_of("#ff8800"), Kind::Colour(0xff8800));
+        assert_eq!(kind_of(" #f80 "), Kind::Colour(0xff8800));
+        assert_eq!(kind_of("https://example.org/a?b=1"), Kind::Link);
+        assert_eq!(kind_of("see https://x.org"), Kind::Text);
+        assert_eq!(kind_of("~/dotfiles/loka"), Kind::Path);
+        assert_eq!(kind_of("fn main() {\n    let x = 1;\n}"), Kind::Code);
+        assert_eq!(kind_of("hello world"), Kind::Text);
     }
 }

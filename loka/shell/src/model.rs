@@ -90,6 +90,8 @@ impl Rec {
 #[derive(Default)]
 pub struct Model {
     pub clock: String,
+    /// The focused window, for the window page.
+    pub win: crate::i3::Focus,
     pub date: String,
     pub battery: Option<Battery>,
     pub wifi: Option<Wifi>,
@@ -108,6 +110,8 @@ pub struct Model {
     pub bright: f32,
     pub profile: String,
     pub coffee: bool,
+    /// Game mode: compositor off, live wallpaper off, performance profile, do not disturb.
+    pub game: bool,
     pub media: Option<Media>,
     pub art: Option<tiny_skia::Pixmap>,
     pub art_key: String,

@@ -38,6 +38,8 @@ pub enum Act {
     NotifAction(u32, String),
     NotifClear,
     Dnd,
+    GameMode,
+    ClipPin(u32),
     NightLight,
     CalShift(i32),
     Power(&'static str),
@@ -321,6 +323,22 @@ impl<'a> Ui<'a> {
         let kx = if on { sx + 20.0 } else { sx + 2.0 };
         self.rect(kx, cy - 9.0, 18.0, 18.0, 9.0, if on { th.fg_on(th.on) } else { th.fg.alpha(0.7) });
         self.y += h + 6.0;
+    }
+
+    /// An empty page: a large icon, a title and a hint, centred.
+    pub fn empty(&mut self, glyph: &str, title: &str, hint: &str) {
+        let th = self.th;
+        let cx = self.x + self.w / 2.0;
+        let y = self.y + 18.0;
+        self.rect(cx - 26.0, y, 52.0, 52.0, 26.0, th.fg.alpha(0.06));
+        self.glyph_center(glyph, 24.0, cx, y + 26.0, th.muted);
+        let ts = self.txt(self.size - 2.0, 700);
+        self.text_center(title, &ts, cx, y + 74.0, th.fg);
+        if !hint.is_empty() {
+            let hs = self.txt(self.size - 4.0, 400);
+            self.text_center(hint, &hs, cx, y + 96.0, th.muted);
+        }
+        self.y = y + if hint.is_empty() { 96.0 } else { 116.0 };
     }
 
     pub fn note(&mut self, s: &str) {

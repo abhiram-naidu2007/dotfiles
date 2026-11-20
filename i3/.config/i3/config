@@ -60,7 +60,7 @@ bindsym $mod+e exec exo-open --launch FileManager
 bindsym $mod+i exec ~/.config/i3/scripts/settings.sh
 
 # --- look: mood and wallpaper (rice --help) ---
-## worlds: pick a world (Meridian, Katha, Sakuga, Toon)
+## worlds: pick a world (Meridian, Sakuga, Sumi, Katha, Toon)
 bindsym $mod+t exec --no-startup-id ~/.local/bin/loka-key worlds
 ## worlds: jump straight to the next world
 bindsym $mod+Shift+t exec --no-startup-id ~/.local/bin/loka-key worldNext

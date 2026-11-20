@@ -20,6 +20,7 @@ pub fn draw(page: &str, ui: &mut Ui, m: &Model, now: Instant) {
         "settings" => settings(ui, m),
         "battery" => battery(ui, m),
         "record" => record(ui, m),
+        "window" => window(ui, m),
         _ => main(ui, m, now),
     }
 }
@@ -263,7 +264,7 @@ fn wifi(ui: &mut Ui, m: &Model) {
     if m.wifi_busy && m.nets.is_empty() {
         ui.note("Scanning…");
     }
-    for n in m.nets.iter().take(14) {
+    for n in m.nets.iter().take(30) {
         let sec = match n.security {
             "open" => "Open",
             "eap" => "Enterprise",
@@ -291,7 +292,11 @@ fn bt(ui: &mut Ui, m: &Model) {
     if on {
         let devs = &m.bt_devs;
         if devs.is_empty() {
-            ui.note(if m.bt_scanning { "Scanning for devices…" } else { "No devices. Press refresh to scan." });
+            if m.bt_scanning {
+                ui.empty("\u{f00af}", "Scanning…", "Nearby devices show here.");
+            } else {
+                ui.empty("\u{f00b2}", "No devices", "Press refresh to scan.");
+            }
         }
         for d in devs.iter().take(12) {
             let g = match d.icon.as_str() {
@@ -435,7 +440,7 @@ fn notifications(ui: &mut Ui, m: &Model) {
     ui.header("Notifications", Some(("\u{f0b89}", Act::NotifClear)));
     ui.toggle("Do not disturb", "\u{f009b}", m.dnd, Act::Dnd);
     if m.notifs.is_empty() {
-        ui.note("Nothing new.");
+        ui.empty("\u{f009c}", "All caught up", "New notifications show here.");
         return;
     }
     let th = ui.th;
@@ -448,7 +453,7 @@ fn notifications(ui: &mut Ui, m: &Model) {
     }
     let mut shown = 0;
     for app in apps {
-        if shown >= 10 {
+        if shown >= 40 {
             break;
         }
         let all: Vec<&crate::model::Notif> = m.notifs.iter().rev().filter(|n| n.app == app).collect();
@@ -514,12 +519,16 @@ fn clipboard(ui: &mut Ui, m: &Model) {
     }
     ui.y = y + 46.0;
     let q = m.clip_query.to_lowercase();
-    let items: Vec<&crate::clip::Item> = m.clip.iter().filter(|i| q.is_empty() || i.text.to_lowercase().contains(&q)).take(12).collect();
+    let items: Vec<&crate::clip::Item> = m.clip.iter().filter(|i| q.is_empty() || i.text.to_lowercase().contains(&q)).take(40).collect();
     if items.is_empty() {
-        ui.note(if m.clip.is_empty() { "Clipboard history is empty." } else { "Nothing found." });
+        if m.clip.is_empty() {
+            ui.empty("\u{f014c}", "Clipboard is empty", "Copied text and images show here.");
+        } else {
+            ui.empty("\u{f0349}", "Nothing found", "Try another search.");
+        }
         return;
     }
-    for &crate::clip::Item { id, ref text, ref image } in items {
+    for &crate::clip::Item { id, ref text, ref image, pinned, kind } in items {
         let start = ui.y;
         if image.is_some() {
             let h = 60.0;
@@ -540,13 +549,72 @@ fn clipboard(ui: &mut Ui, m: &Model) {
             ui.text(text, &ss, x + 86.0, start + h / 2.0 + 9.0, th.muted);
             ui.y = start + h + 2.0;
         } else {
-            ui.row("\u{f0192}", text, "", "    ", false, Act::ClipCopy(id));
+            use crate::clip::Kind;
+            let glyph = match kind {
+                Kind::Link => "\u{f0339}",
+                Kind::Path => "\u{f024b}",
+                Kind::Code => "\u{f0169}",
+                Kind::Colour(_) => "",
+                _ => "\u{f0192}",
+            };
+            let row_y = ui.y;
+            ui.row(glyph, text, "", "         ", false, Act::ClipCopy(id));
+            if let Kind::Colour(c) = kind {
+                // a swatch of the colour where the icon would be
+                let rgb = crate::canvas::Rgba::new(((c >> 16) & 255) as f32 / 255.0, ((c >> 8) & 255) as f32 / 255.0, (c & 255) as f32 / 255.0, 1.0);
+                let cy = row_y + (ui.y - row_y - 2.0) / 2.0;
+                ui.rect(x + 12.0, cy - 8.0, 16.0, 16.0, 4.0, rgb);
+                ui.stroke(x + 12.0, cy - 8.0, 16.0, 16.0, 4.0, th.line);
+            }
         }
         let rh = ui.y - start - 2.0;
+        ui.hit(IRect::new((x + w - 66.0) as i32, (start + rh / 2.0 - 14.0) as i32, 28, 28), Act::ClipPin(id));
+        let c = if pinned { th.on } else { ui.hv(th.fg, th.muted.alpha(0.6)) };
+        ui.glyph_center(if pinned { "\u{f0403}" } else { "\u{f0931}" }, 12.0, x + w - 52.0, start + rh / 2.0, c);
         ui.hit(IRect::new((x + w - 36.0) as i32, (start + rh / 2.0 - 14.0) as i32, 28, 28), Act::ClipDelete(id));
         let c = ui.hv(th.crit, th.muted);
         ui.glyph_center("\u{f0156}", 12.0, x + w - 22.0, start + rh / 2.0, c);
     }
+}
+
+/// The focused window: what it is, and i3 actions on it.
+fn window(ui: &mut Ui, m: &Model) {
+    ui.header("Window", None);
+    let f = &m.win;
+    if f.window == 0 {
+        ui.empty("\u{f05af}", "No window", "Focus a window, then open this page.");
+        return;
+    }
+    let th = ui.th;
+    let (x, w) = (ui.x, ui.w);
+    let y = ui.y;
+    ui.card(x, y, w, 92.0, false, false);
+    let cs = ui.txt(ui.size - 6.0, 700).tracking(0.6);
+    ui.text_max(&f.class.to_uppercase(), &cs, x + 14.0, y + 18.0, th.muted, w - 28.0);
+    let ts = ui.txt(ui.size - 2.0, 700);
+    ui.text_max(&f.title, &ts, x + 14.0, y + 42.0, th.fg, w - 28.0);
+    let ss = ui.txt(ui.size - 5.0, 400);
+    let (rx, ry, rw, rh) = f.rect;
+    let state = [(f.floating, "floating"), (f.sticky, "sticky"), (f.fullscreen, "fullscreen")]
+        .iter().filter(|s| s.0).map(|s| s.1).collect::<Vec<_>>().join(" · ");
+    let info = format!("{rw}×{rh} at {rx},{ry} · 0x{:x}{}{}", f.window, if state.is_empty() { "" } else { " · " }, state);
+    ui.text_max(&info, &ss, x + 14.0, y + 68.0, th.muted, w - 28.0);
+    ui.y = y + 102.0;
+    let target = format!("[id={}]", f.window);
+    let cmd = |c: &str| Act::Exec(vec!["i3-msg".into(), "-q".into(), format!("{target} {c}")]);
+    let bw = (w - 30.0) / 4.0;
+    let y = ui.y;
+    let items = [
+        ("\u{f0272}", "Float", f.floating, "floating toggle"),
+        ("\u{f0403}", "Sticky", f.sticky, "sticky toggle"),
+        ("\u{f0293}", "Fullscreen", f.fullscreen, "fullscreen toggle"),
+        ("\u{f0156}", "Close", false, "kill"),
+    ];
+    for (i, (g, label, on, c)) in items.into_iter().enumerate() {
+        ui.button(x + i as f32 * (bw + 10.0), y, bw, 40.0, g, label, on, cmd(c));
+    }
+    ui.y = y + 50.0;
+    ui.note("Click the window title in the bar to open this page.");
 }
 
 fn record(ui: &mut Ui, m: &Model) {
@@ -594,8 +662,8 @@ fn settings(ui: &mut Ui, m: &Model) {
     let (x, w) = (ui.x, ui.w);
     ui.label("World");
     let y = ui.y;
-    let bw = (w - 30.0) / 4.0;
-    for (i, (id, name)) in [("meridian", "Meridian"), ("katha", "Katha"), ("sakuga", "Sakuga"), ("toon", "Toon")].into_iter().enumerate() {
+    let bw = (w - 40.0) / 5.0;
+    for (i, (id, name)) in [("meridian", "Meridian"), ("sakuga", "Sakuga"), ("sumi", "Sumi"), ("katha", "Katha"), ("toon", "Toon")].into_iter().enumerate() {
         ui.button(x + i as f32 * (bw + 10.0), y, bw, 36.0, "", name, m.world == id, Act::Cmd(format!("world {id}")));
     }
     ui.y = y + 46.0;
@@ -645,6 +713,7 @@ fn settings(ui: &mut Ui, m: &Model) {
     ui.label("System");
     ui.toggle("Sound effects", "\u{f057e}", m.cfg.sounds, Act::Sounds);
     ui.toggle("Coffee mode", "\u{f0176}", m.coffee, Act::Coffee);
+    ui.toggle("Game mode", "\u{f0297}", m.game, Act::GameMode);
     ui.toggle(&format!("Night light {:02}:00–{:02}:00", m.cfg.night_from, m.cfg.night_to), "\u{f0594}", m.cfg.night_light, Act::NightLight);
 }
 
@@ -658,7 +727,7 @@ fn battery(ui: &mut Ui, m: &Model) {
     let th = ui.th;
     let (x, w) = (ui.x, ui.w);
     let Some(b) = &m.battery else {
-        ui.note("No battery found.");
+        ui.empty("\u{f0091}", "No battery", "This machine runs on mains power.");
         return;
     };
     let none = crate::model::BatDetails::default();

@@ -21,6 +21,11 @@ pub struct Focus {
     pub title: String,
     pub class: String,
     pub fullscreen: bool,
+    /// For the window page: X window id, geometry, floating and sticky state.
+    pub window: i64,
+    pub rect: (i64, i64, i64, i64),
+    pub floating: bool,
+    pub sticky: bool,
 }
 
 pub struct I3 {
@@ -218,6 +223,15 @@ pub fn focus_of(n: &Value) -> Focus {
         title: n["name"].as_str().unwrap_or_default().to_owned(),
         class: n["window_properties"]["class"].as_str().unwrap_or_default().to_owned(),
         fullscreen: n["fullscreen_mode"].as_i64().unwrap_or(0) > 0,
+        window: n["window"].as_i64().unwrap_or(0),
+        rect: (
+            n["rect"]["x"].as_i64().unwrap_or(0),
+            n["rect"]["y"].as_i64().unwrap_or(0),
+            n["rect"]["width"].as_i64().unwrap_or(0),
+            n["rect"]["height"].as_i64().unwrap_or(0),
+        ),
+        floating: n["floating"].as_str().is_some_and(|s| s.ends_with("_on")),
+        sticky: n["sticky"].as_bool().unwrap_or(false),
     }
 }
 

@@ -4,7 +4,7 @@
 
 # dotfiles
 
-**An i3 desktop with its own Rust shell, four colour worlds, an e-ink mood, live math wallpapers and a 10 ms file search.**
+**An i3 desktop with its own Rust shell, five colour worlds, an e-ink mood, live math wallpapers and a 10 ms file search.**
 
 ![Ubuntu 26.04](https://img.shields.io/badge/Ubuntu-26.04-E95420?style=flat-square&logo=ubuntu&logoColor=white)
 ![X11 + i3](https://img.shields.io/badge/X11-i3-1793D1?style=flat-square&logo=i3&logoColor=white)
@@ -24,7 +24,7 @@
 | | |
 |---|---|
 | **loka** | One Rust binary is the bar, the dynamic island, the control centre, the notification daemon, the tray host and the clipboard history. About 20 MB of RAM, under 1% CPU at idle. |
-| **Worlds** | Meridian, Katha, Sakuga and Toon. Each world brings its own hues to every program at once. Sakuga reads its accents from the wallpaper. |
+| **Worlds** | Meridian, Sakuga, Sumi, Katha and Toon. Each world brings its own hues to every program at once. Sakuga reads its accents from the wallpaper. |
 | **Paper mood** | An e-ink look: the wallpaper reprinted in 16 grey levels, and every window passed through a GPU shader with ordered dither, ink spread and paper fibre. |
 | **mathwall** | Live wallpapers drawn by the GPU: a temple town at dusk, chaotic attractors, Chladni plates. 1 to 4.5 ms per frame, and asleep whenever a window is open. |
 | **evry** | Every file on the disk, searched as you type. 865 000 entries indexed in 2.7 s, about 10 ms per query, no daemon. |
@@ -105,6 +105,7 @@ One palette drives everything. `theme/apply.py` turns the world's hues into an O
 | **Meridian** | near-monochrome slate with one red accent; the default |
 | **Katha** | deep indigo, gold and rose |
 | **Sakuga** | accents read from the wallpaper (pywal16 hues only; lightness and contrast stay fixed) |
+| **Sumi** | ink: pure black and white, sharp corners, one seal-red accent |
 | **Toon** | plum, sunflower yellow and mint |
 
 | Mood | Look |

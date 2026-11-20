@@ -10,7 +10,7 @@ Two moods share the same hues and differ only in lightness and chroma:
   paper  warm cream and ink for reading; hues are fixed, the wallpaper is ignored
 Every template in templates/ is rendered to the path on its first line:
   # target: ~/.config/x
-Usage: apply.py [--mode night|paper] [--world meridian|sakuga|katha|toon] WALLPAPER
+Usage: apply.py [--mode night|paper] [--world meridian|sakuga|sumi|katha|toon] WALLPAPER
        apply.py --check ...   print the palette only
 """
 import json, math, os, subprocess, sys
@@ -106,6 +106,8 @@ WORLDS = {
     "sakuga":   dict(base="#0a0b10", accent="#e23a42", accent2="#5aa7e6", tint=0.016, accent_c=1.0, from_wall=True),
     "katha":    dict(base="#0e1440", accent="#e8b04a", accent2="#f28fb0", tint=0.040, accent_c=1.05),
     "toon":     dict(base="#2a2244", accent="#ffd45c", accent2="#8ee3c8", tint=0.034, accent_c=1.1),
+    # Sumi: ink on black, no tint, a white accent and the red of a seal stamp
+    "sumi":     dict(base="#000000", accent="#f2f2f2", accent2="#c8102e", tint=0.0, accent_c=0.0),
 }
 
 

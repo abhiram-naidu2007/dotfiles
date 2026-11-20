@@ -207,9 +207,16 @@ pub fn blend_rgba(pm: &mut Pixmap, x0: i32, y0: i32, w: i32, h: i32, rgba: &[u8]
 
 #[allow(clippy::too_many_arguments)]
 pub fn blit_clip(dst: &mut Pixmap, src: &Pixmap, dx: i32, dy: i32, rows: u32, opacity: f32, clip_x0: i32, clip_x1: i32) {
+    blit_clip_from(dst, src, dx, dy, 0, rows, opacity, clip_x0, clip_x1);
+}
+
+/// Like `blit_clip`, starting `sy` rows down in `src` (a scrolled view).
+#[allow(clippy::too_many_arguments)]
+pub fn blit_clip_from(dst: &mut Pixmap, src: &Pixmap, dx: i32, dy: i32, sy: i32, rows: u32, opacity: f32, clip_x0: i32, clip_x1: i32) {
     let (dw, dh) = (dst.width() as i32, dst.height() as i32);
     let sw = src.width() as i32;
-    let rows = (rows as i32).min(src.height() as i32);
+    let sy = sy.clamp(0, src.height() as i32);
+    let rows = (rows as i32).min(src.height() as i32 - sy);
     let x0 = dx.max(0).max(clip_x0);
     let x1 = (dx + sw).min(dw).min(clip_x1);
     if x1 <= x0 {
@@ -226,7 +233,7 @@ pub fn blit_clip(dst: &mut Pixmap, src: &Pixmap, dx: i32, dy: i32, rows: u32, op
         if y < 0 || y >= dh {
             continue;
         }
-        let so = (j as usize * sw as usize + sx0) * 4;
+        let so = ((j + sy) as usize * sw as usize + sx0) * 4;
         let doff = (y as usize * dw as usize + x0 as usize) * 4;
         let srow = &s[so..so + n * 4];
         let drow = &mut d[doff..doff + n * 4];
