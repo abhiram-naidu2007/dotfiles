@@ -27,8 +27,16 @@ xset s 600 600            # screensaver (xss-lock locks) after 10 min idle
 xset dpms 0 0 900         # screen off after 15 min
 xset r rate 300 40        # key repeat: 300 ms delay, 40/s
 xsetroot -cursor_name left_ptr  # arrow, not the X cross, over the desktop
+# Touchpad defaults first; the XFCE settings below are applied after them and win
 tp=$(xinput list --name-only | grep -i touchpad | head -1)
 if [ -n "$tp" ]; then
     xinput set-prop "$tp" "libinput Tapping Enabled" 1
     xinput set-prop "$tp" "libinput Natural Scrolling Enabled" 0
+fi
+# XFCE mouse/touchpad/keyboard settings, live: change them in the XFCE dialogs and they apply here
+# (on an i3 restart the watcher is already running: apply once, so the defaults above do not stick)
+if pgrep -f "xfce-settings.sh --watch" >/dev/null; then
+    ~/.config/i3/scripts/xfce-settings.sh >/dev/null 2>&1 &
+else
+    setsid ~/.config/i3/scripts/xfce-settings.sh --watch >/dev/null 2>&1 &
 fi

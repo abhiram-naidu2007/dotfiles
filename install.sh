@@ -18,7 +18,7 @@ APT_PKGS=(i3 polybar rofi dunst picom fish starship stow fonts-inter autotiling 
           i3lock xss-lock imagemagick libnotify-bin x11-xserver-utils xinput
           pipewire-pulse wireplumber pavucontrol blueman arandr
           papirus-icon-theme gnome-themes-extra xsettingsd
-          exo-utils xfce4-settings xfce4-power-manager neovim
+          exo-utils xfce4-settings xfce4-power-manager zenity numlockx neovim
           zathura zathura-pdf-poppler zathura-djvu zathura-cb poppler-utils
           fzf bat eza zoxide chafa qalc jq
           rofi-dev libglib2.0-dev libcairo2-dev libx11-dev libxext-dev libgl-dev build-essential lazygit
