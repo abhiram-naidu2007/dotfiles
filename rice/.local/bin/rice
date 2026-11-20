@@ -227,8 +227,9 @@ fitted() {
   out="$CACHE/fit-$size-$style-$(printf '%s' "$src$(stat -c %Y "$src")$(stat -c %Y "$DATA/rice/fit.tsv" 2>/dev/null)" | md5sum | cut -c1-12).png"
   [ -s "$out" ] && { echo "$out"; return; }
   if [ "$off" -gt 0 ]; then wide=1; nw=$w; nh=$(( ih * w / iw )); else wide=0; nh=$h; nw=$(( iw * h / ih )); fi
-  local pic="$CACHE/fit.pic.png" bg="$CACHE/fit.bg.png"
-  magick "$src[0]" -background black -alpha remove -resize "${nw}x${nh}!" "$pic" || { echo "$src"; return; }
+  # work files named after the output, so two quick changes of wallpaper never share them
+  local pic="$out.pic.png" bg="$out.bg.png" refl="$out.refl.png"
+  magick "$src[0]" -background black -alpha remove -resize "${nw}x${nh}!" "$pic" || { rm -f "$pic"; echo "$src"; return; }
   case $style in
     mirror)
       if [ $wide = 1 ]; then magick "$pic" \( +clone -flip \) -append \( +clone -flip \) -append -gravity center -crop "${w}x${h}+0+0" +repage "$bg"
@@ -249,11 +250,11 @@ fitted() {
   gx=$(( (w - nw) / 2 )); gy=$(( (h - nh) / 2 ))
   if [ "$style" = reflect ] && [ $wide = 1 ]; then
     # below the picture: itself upside down, fading into the sky colour of the bottom edge
-    magick "$pic" -flip -blur 0x1.4 \( -size "${nw}x${nh}" gradient:'gray(55%)-black' \) -alpha off -compose CopyOpacity -composite "$CACHE/fit.refl.png"
-    magick "$bg" "$CACHE/fit.refl.png" -geometry "+${gx}+$(( gy + nh ))" -composite "$bg"
+    magick "$pic" -flip -blur 0x1.4 \( -size "${nw}x${nh}" gradient:'gray(55%)-black' \) -alpha off -compose CopyOpacity -composite "$refl"
+    magick "$bg" "$refl" -geometry "+${gx}+$(( gy + nh ))" -composite "$bg"
   fi
-  magick "$bg" "$pic" -geometry "+${gx}+${gy}" -composite "$out.tmp.png" && mv "$out.tmp.png" "$out" || { rm -f "$out.tmp.png"; echo "$src"; return; }
-  rm -f "$pic" "$bg" "$CACHE/fit.refl.png"
+  magick "$bg" "$pic" -geometry "+${gx}+${gy}" -composite "$out.tmp.png" && mv "$out.tmp.png" "$out" || { rm -f "$out.tmp.png" "$pic" "$bg" "$refl"; echo "$src"; return; }
+  rm -f "$pic" "$bg" "$refl"
   echo "$out"
 }
 
