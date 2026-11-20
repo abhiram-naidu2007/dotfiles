@@ -690,7 +690,7 @@ impl Bar {
             }
             (Some(Hit::Volume), 3) => exec("pavucontrol"),
             (Some(Hit::Volume), 1) => Some(Click::Page("audio")),
-            (Some(Hit::Wifi), 3) => exec("nm-connection-editor"),
+            (Some(Hit::Wifi), 3) => exec("~/.config/i3/scripts/wifi.sh"),
             (Some(Hit::Wifi), 1) => Some(Click::Page("wifi")),
             (Some(Hit::Bluetooth), 1) => Some(Click::Page("bt")),
             (Some(Hit::Bluetooth), 3) => exec("blueman-manager"),
