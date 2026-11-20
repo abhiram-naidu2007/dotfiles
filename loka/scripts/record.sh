@@ -3,8 +3,11 @@ STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/loka"
 STATE="$STATE_DIR/record.state"
 mkdir -p "$STATE_DIR"
 
+# A recording is a list of segments (SEGS): pause ends the running ffmpeg, resume starts a new one
+# with the same arguments (ARGS), stop joins them. Stopping ffmpeg with SIGSTOP instead would keep
+# the paused time in the video as a frozen frame: x11grab stamps frames with the wall clock.
 read_state() {
-    PID=""; STARTED=""; PAUSED_AT=""; PAUSED_TOTAL=0; FILE=""; MODULES=""
+    PID=""; STARTED=""; PAUSED_AT=""; PAUSED_TOTAL=0; FILE=""; MODULES=""; ARGS=(); SEGS=(); LEGACY=""
     if [ ! -f "$STATE" ]; then
         local rp="${XDG_RUNTIME_DIR:-/tmp}/rice-rec.pid" rf="${XDG_RUNTIME_DIR:-/tmp}/rice-rec.path"
         [ -s "$rp" ] || return 1
@@ -16,18 +19,48 @@ read_state() {
         return 0
     fi
     . "$STATE"
-    [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null
+    [ -n "$PAUSED_AT" ] || { [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; }
 }
 
 write_state() {
-    cat > "$STATE" <<EOF
-PID=$PID
-STARTED=$STARTED
-PAUSED_AT=$PAUSED_AT
-PAUSED_TOTAL=$PAUSED_TOTAL
-FILE="$FILE"
-MODULES="$MODULES"
-EOF
+    # -g: the file is sourced inside read_state, and must set globals there
+    declare -p PID STARTED PAUSED_AT PAUSED_TOTAL FILE MODULES ARGS SEGS | sed 's/^declare /declare -g /' > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+}
+
+# SIGINT lets ffmpeg finish the file; TERM after 5 s if it hangs.
+stop_ffmpeg() {
+    [ -n "$1" ] || return 0
+    kill -INT "$1" 2>/dev/null
+    for _ in $(seq 1 50); do kill -0 "$1" 2>/dev/null || return 0; sleep 0.1; done
+    kill -TERM "$1" 2>/dev/null
+}
+
+# Start ffmpeg with ARGS into $1; true when it is still running after a moment.
+attempt() {
+    setsid ffmpeg -loglevel error "${ARGS[@]}" "$1" >"$STATE_DIR/record.log" 2>&1 < /dev/null &
+    PID=$!
+    sleep 0.6
+    kill -0 "$PID" 2>/dev/null
+}
+
+# Join the segments into FILE (stream copy, no re-encode). If joining fails, the segments are kept.
+join_segments() {
+    local s list="$STATE_DIR/record.list" ok=()
+    for s in "${SEGS[@]}"; do [ -s "$s" ] && ok+=("$s"); done
+    case "${#ok[@]}" in
+        0) return 0 ;;
+        1) mv -f "${ok[0]}" "$FILE" ;;
+        *) : > "$list"
+           for s in "${ok[@]}"; do printf "file '%s'\n" "${s//\'/\'\\\'\'}" >> "$list"; done
+           if ffmpeg -y -v error -f concat -safe 0 -i "$list" -c copy -movflags +faststart "$FILE" 2>/dev/null && [ -s "$FILE" ]; then
+               rm -f "${ok[@]}"
+           else
+               rm -f "$FILE"
+               notify-send -a Recording -u critical "Recording not joined" "the parts are kept: ${ok[0]%.part0.mp4}.part*.mp4"
+           fi
+           rm -f "$list" ;;
+    esac
+    for s in "${SEGS[@]}"; do [ -s "$s" ] || rm -f "$s"; done      # empty parts only
 }
 
 default_monitor() {
@@ -127,24 +160,21 @@ case "$1" in
             case "$(basename "$(readlink -f "/sys/class/drm/${node##*/}/device/driver")")" in i915|xe|amdgpu|radeon) gpu=$node; break ;; esac
         done
 
-        attempt() {
-            setsid ffmpeg -loglevel error "$@" >"$STATE_DIR/record.log" 2>&1 < /dev/null &
-            PID=$!
-            sleep 0.6
-            kill -0 "$PID" 2>/dev/null
-        }
-
+        SEGS=("${FILE%.mp4}.part0.mp4")
         started=0
         if [ -n "$gpu" ]; then
-            attempt -vaapi_device "$gpu" "${grab[@]}" "${audio[@]}" \
-                -vf 'format=bgr0,hwupload,scale_vaapi=format=nv12' -c:v h264_vaapi -qp 22 -movflags +faststart "$FILE" && started=1
+            ARGS=(-vaapi_device "$gpu" "${grab[@]}" "${audio[@]}" \
+                -vf 'format=bgr0,hwupload,scale_vaapi=format=nv12' -c:v h264_vaapi -qp 22)
+            attempt "${SEGS[0]}" && started=1
         fi
         if [ "$started" = 0 ]; then
-            rm -f "$FILE"
-            attempt "${grab[@]}" "${audio[@]}" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags +faststart "$FILE" && started=1
+            rm -f "${SEGS[0]}"
+            ARGS=("${grab[@]}" "${audio[@]}" -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p)
+            attempt "${SEGS[0]}" && started=1
         fi
 
         if [ "$started" = 0 ]; then
+            rm -f "${SEGS[0]}"
             unload_modules "$MODULES"
             echo "failed" >&2
             tail -4 "$STATE_DIR/record.log" >&2
@@ -161,12 +191,16 @@ case "$1" in
 
     pause)
         read_state || { echo "idle" >&2; exit 1; }
-        if [ -n "$PAUSED_AT" ]; then
-            kill -CONT "$PID"
+        [ -z "$LEGACY" ] || { echo "this recording was started by capture.sh and cannot pause" >&2; exit 1; }
+        if [ -n "$PAUSED_AT" ]; then          # resume: a new segment with the same settings
+            seg="${FILE%.mp4}.part${#SEGS[@]}.mp4"
+            attempt "$seg" || { tail -2 "$STATE_DIR/record.log" >&2; exit 1; }
+            SEGS+=("$seg")
             PAUSED_TOTAL=$(( PAUSED_TOTAL + $(date +%s) - PAUSED_AT ))
             PAUSED_AT=""
-        else
-            kill -STOP "$PID"
+        else                                  # pause: finish the running segment
+            stop_ffmpeg "$PID"
+            PID=""
             PAUSED_AT=$(date +%s)
         fi
         write_state
@@ -174,16 +208,14 @@ case "$1" in
 
     stop)
         read_state || { echo "idle" >&2; exit 1; }
-        [ -n "$PAUSED_AT" ] && kill -CONT "$PID"
-        kill -INT "$PID" 2>/dev/null
-        for _ in $(seq 1 50); do
-            kill -0 "$PID" 2>/dev/null || break
-            sleep 0.1
-        done
-        kill -0 "$PID" 2>/dev/null && kill -TERM "$PID" 2>/dev/null
+        stop_ffmpeg "$PID"
         unload_modules "$MODULES"
         rm -f "$STATE"
-        [ -n "$LEGACY" ] && rm -f "${XDG_RUNTIME_DIR:-/tmp}/rice-rec.pid" "${XDG_RUNTIME_DIR:-/tmp}/rice-rec.path"
+        if [ -n "$LEGACY" ]; then
+            rm -f "${XDG_RUNTIME_DIR:-/tmp}/rice-rec.pid" "${XDG_RUNTIME_DIR:-/tmp}/rice-rec.path"
+        else
+            join_segments
+        fi
         finalize "$FILE"
         echo "$FILE"
         ;;
@@ -191,15 +223,17 @@ case "$1" in
     status)
         if read_state; then
             if [ -n "$PAUSED_AT" ]; then
-                echo "paused|$PID|$STARTED|$(( PAUSED_TOTAL + $(date +%s) - PAUSED_AT ))|$FILE"
+                echo "paused|${PID:-0}|$STARTED|$(( PAUSED_TOTAL + $(date +%s) - PAUSED_AT ))|$FILE"
             else
                 echo "rec|$PID|$STARTED|$PAUSED_TOTAL|$FILE"
             fi
         else
-            if [ -f "$STATE" ]; then
+            if [ -f "$STATE" ]; then           # ffmpeg died on its own: keep what it wrote
                 . "$STATE"
                 unload_modules "$MODULES"
                 rm -f "$STATE"
+                join_segments
+                finalize "$FILE"
             fi
             echo "idle"
         fi
